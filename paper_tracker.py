@@ -1,7 +1,7 @@
 import os
 import requests
 from openai import OpenAI
-
+import time
 # --- 配置区 (这些将配置在 GitHub Secrets 中) ---
 S2_API_KEY = os.getenv("S2_API_KEY")
 LLM_API_KEY = os.getenv("LLM_API_KEY")
@@ -109,6 +109,7 @@ def get_paper_recommendations():
 
     # 步骤 2：调用 Batch API 批量查这 10 篇的 TLDR
     if top_new_papers:
+        time.sleep(1)
         paper_ids = [p["paperId"] for p in top_new_papers]
         batch_url = "https://api.semanticscholar.org/graph/v1/paper/batch"
         batch_params = {"fields": "paperId,tldr"}
