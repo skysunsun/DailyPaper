@@ -141,7 +141,7 @@ def get_paper_recommendations():
 def summarize_papers_with_llm(papers):
     """调用大模型进行总结"""
     client = OpenAI(
-        api_key=LLM_API_KEY, base_url="https://api.deepseek.com"
+        api_key=LLM_API_KEY, base_url="https://chat.cqjtu.edu.cn/ds/api/v1"
     )  # deepseek
     # client = OpenAI(
     #     api_key=LLM_API_KEY, base_url="https://api.siliconflow.cn/v1"
