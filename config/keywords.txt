@@ -1,0 +1,21 @@
+Pedestrian Intention Prediction
+Pedestrian Intention Estimation
+Pedestrian behavior prediction
+Pedestrian action prediction
+Pedestrian action Estimation
+Pedestrian behavior Estimation
+pedestrian crossing behavior prediction
+multivariate time series forecasting
+interpretable time series prediction
+causal inference for time series
+pedestrian intention prediction
+causal discovery in multivariate time series
+explainable AI for trajectory prediction
+Granger causality pedestrian
+causal attention model
+causal representation learning time series
+interpretability autonomous driving
+pedestrian crossing intent recognition
+multivariate time series interpretability
+causal deep learning pedestrian
+explainability motion forecasting
