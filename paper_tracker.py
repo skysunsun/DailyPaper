@@ -3,6 +3,7 @@ import requests
 from openai import OpenAI
 import time
 from urllib.parse import urlencode
+import xml.etree.ElementTree as ET
 # --- 配置区 (这些将配置在 GitHub Secrets 中) ---
 S2_API_KEY = os.getenv("S2_API_KEY")
 LLM_API_KEY = os.getenv("LLM_API_KEY")
@@ -37,6 +38,89 @@ def read_seed_papers(file_path):
                 papers.append(line)
     return papers
 
+def search_arxiv(keywords, max_results=30):
+    """
+    使用 arXiv 官方 API 搜索关键词列表，返回归一化后的论文列表。
+    无需安装第三方库，只需 requests 和标准库 xml。
+    """
+    papers = []
+    base_url = "http://export.arxiv.org/api/query"
+    
+    for kw in keywords:
+        # 多词关键词可以加双引号、AND 等，这里原样传入
+        query = f"all:{kw}"
+        params = {
+            "search_query": query,
+            "start": 0,
+            "max_results": max_results,
+            "sortBy": "submittedDate",
+            "sortOrder": "descending"
+        }
+        try:
+            resp = requests.get(base_url, params=params, timeout=30)
+            if resp.status_code != 200:
+                print(f"arXiv API 返回 {resp.status_code}: {resp.text[:200]}")
+                time.sleep(1)
+                continue
+            
+            # 解析 XML
+            root = ET.fromstring(resp.text)
+            # 命名空间处理（Atom 默认 ns）
+            ns = {
+                "atom": "http://www.w3.org/2005/Atom",
+                "arxiv": "http://arxiv.org/schemas/atom"
+            }
+            for entry in root.findall("atom:entry", ns):
+                title_el = entry.find("atom:title", ns)
+                title = title_el.text.strip() if title_el is not None else ""
+                
+                summary_el = entry.find("atom:summary", ns)
+                abstract = summary_el.text.strip() if summary_el is not None else ""
+                
+                # 作者
+                authors = []
+                for author_el in entry.findall("atom:author/atom:name", ns):
+                    if author_el.text:
+                        authors.append(author_el.text.strip())
+                
+                # 发表日期
+                published_el = entry.find("atom:published", ns)
+                pub_date = published_el.text.strip()[:10] if published_el is not None else ""
+                
+                # arXiv ID
+                id_el = entry.find("atom:id", ns)
+                full_id = id_el.text.strip() if id_el is not None else ""
+                # 提取纯 ID，例如 http://arxiv.org/abs/2103.xxxxx -> 2103.xxxxx
+                arxiv_id = full_id.split("/abs/")[-1] if "/abs/" in full_id else full_id
+                
+                # URL
+                link_el = entry.find("atom:link[@title='pdf']", ns)
+                if link_el is None:
+                    link_el = entry.find("atom:link", ns)
+                pdf_url = link_el.attrib.get("href", "") if link_el is not None else ""
+                
+                papers.append({
+                    "paperId": None,
+                    "title": title,
+                    "abstract": abstract.replace("\n", " ").strip(),
+                    "authors": authors,
+                    "url": f"https://arxiv.org/abs/{arxiv_id}",  # 统一用摘要页
+                    "venue": "arXiv",
+                    "publicationDate": pub_date,
+                    "year": int(pub_date[:4]) if pub_date and len(pub_date)>=4 else None,
+                    "externalIds": {"ArXiv": arxiv_id},
+                    "source": "arxiv",
+                    "tldrText": ""
+                })
+            
+            # arXiv 要求礼貌延迟（没有明确速率限制，建议 3 秒以上）
+            time.sleep(3)
+            
+        except Exception as e:
+            print(f"arXiv 搜索关键词 '{kw}' 时出错: {e}")
+            time.sleep(3)
+    
+    return papers
 
 def get_paper_recommendations_via_keywords():
     """通过关键词搜索 Semantic Scholar，获取新论文推荐"""
@@ -141,7 +225,37 @@ def get_paper_recommendations_via_keywords():
             print(f"警告: TLDR 批量请求失败: {batch_res.status_code} - {batch_res.text}")
             for p in top_new_papers:
                 p["tldrText"] = ""
-    return top_new_papers
+    # ===== 新增：调用 arXiv 并合并 =====
+    print("正在从 arXiv 补充关键词搜索结果...")
+    arxiv_papers = search_arxiv(keywords, max_results=15)   # 可根据需要调整
+    # 将已有的 S2 论文的 ArXiv ID 提取出来，用于去重
+    existing_arxiv_ids = set()
+    for p in top_new_papers:
+        ext_id = p.get("externalIds", {}).get("ArXiv")
+        if ext_id:
+            existing_arxiv_ids.add(ext_id.strip().lower())
+    # 合并 arXiv 新论文（去重 + 避免与 S2 中的已读论文重复）
+    for ap in arxiv_papers:
+        arxiv_id = (ap.get("externalIds", {}).get("ArXiv") or "").lower()
+        if arxiv_id in existing_arxiv_ids:
+            continue
+        if ap.get("paperId") and ap["paperId"] in seen_papers:   # seen_papers 来自历史文件
+            continue
+        top_new_papers.append(ap)
+        existing_arxiv_ids.add(arxiv_id)
+    # 重新按日期排序
+    def get_date(p):
+        pub_date = p.get("publicationDate")
+        if pub_date:
+            return pub_date
+        year = p.get("year")
+        if year:
+            return f"{year}-12-31"
+        return "1900-01-01"
+    top_new_papers.sort(key=get_date, reverse=True)
+    print(f"合并 arXiv 后共 {len(top_new_papers)} 篇，最终取前 10 篇。")
+    return top_new_papers[:10]
+
 
 
 
