@@ -362,6 +362,38 @@ def get_paper_recommendations():
     return top_new_papers
 
 
+
+def format_authors(authors_list):
+    """
+    兼容:
+    [{"name":"Tom"}]
+    ["Tom"]
+    """
+    names = []
+    for author in authors_list or []:
+        if isinstance(author, dict):
+            names.append(author.get("name", "未知"))
+        elif isinstance(author, str):
+            names.append(author)
+
+    if len(names) > 4:
+        names = [names[0], names[1], "...", names[-2], names[-1]]
+
+    return ", ".join(names)
+
+
+def request_with_retry(method, url, max_retry=5, **kwargs):
+    import time
+    for i in range(max_retry):
+        resp = method(url, **kwargs)
+        if resp.status_code != 429:
+            return resp
+        wait = 2 ** i
+        print(f"触发限流，等待 {wait} 秒...")
+        time.sleep(wait)
+    return resp
+
+
 def summarize_papers_with_llm(papers):
     """调用大模型进行总结"""
     client = OpenAI(
@@ -394,18 +426,7 @@ def summarize_papers_with_llm(papers):
         if not abstract_text:
             abstract_text = "无摘要"
 
-        authors_list = paper.get("authors", [])
-        if len(authors_list) > 4:
-            author_names = [
-                authors_list[0].get("name", "未知"),
-                authors_list[1].get("name", "未知"),
-                "...",
-                authors_list[-2].get("name", "未知"),
-                authors_list[-1].get("name", "未知"),
-            ]
-            authors = ", ".join(author_names)
-        else:
-            authors = ", ".join([author.get("name", "未知") for author in authors_list])
+        authors = format_authors(paper.get("authors", []))
 
         prompt = f"""
 你是一个严谨的学术专家。请基于以下论文信息，提取核心内容并转化为中文。
@@ -448,7 +469,13 @@ def update_history(papers):
 
     with open(HISTORY_FILE, "a", encoding="utf-8") as f:
         for p in papers:
-            f.write(p.get("paperId") + "\n")
+            pid = p.get("paperId")
+            if pid:
+                f.write(pid + "\n")
+            else:
+                arxiv_id = p.get("externalIds", {}).get("ArXiv")
+                if arxiv_id:
+                    f.write(f"arxiv:{arxiv_id}\n")
 
 
 def push_to_wechat(content):
