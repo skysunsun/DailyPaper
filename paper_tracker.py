@@ -2,6 +2,7 @@ import os
 import requests
 from openai import OpenAI
 import time
+from urllib.parse import urlencode
 # --- 配置区 (这些将配置在 GitHub Secrets 中) ---
 S2_API_KEY = os.getenv("S2_API_KEY")
 LLM_API_KEY = os.getenv("LLM_API_KEY")
@@ -37,7 +38,115 @@ def read_seed_papers(file_path):
     return papers
 
 
+def get_paper_recommendations_via_keywords():
+    """通过关键词搜索 Semantic Scholar，获取新论文推荐"""
+    url_search = "https://api.semanticscholar.org/graph/v1/paper/search"
+    headers = {"x-api-key": S2_API_KEY}
+    # 读取关键词
+    keywords_path = "config/keywords.txt"
+    try:
+        with open(keywords_path, "r", encoding="utf-8") as f:
+            keywords = [line.strip() for line in f if line.strip()]
+    except FileNotFoundError:
+        print(f"错误：关键词文件 {keywords_path} 不存在。")
+        return []
+    if not keywords:
+        print("错误：关键词列表为空。")
+        return []
+    print(f"使用 {len(keywords)} 个关键词进行搜索: {keywords}")
+    # 用于存储所有搜到的论文（paperId -> paper 字典）
+    collected = {}
+    seen_papers = set(read_list(HISTORY_FILE))
+    blacklisted_venues = [v.lower() for v in read_list(BLACKLIST_FILE)]
+    # 每个关键词最多获取多少篇（根据你的总量和关键词数量动态分配）
+    per_keyword_limit = max(1, MAX_PAPERS_AQUIRED_FROM_S2 // len(keywords))
+    for kw in keywords:
+        print(f"正在搜索关键词: {kw}")
+        offset = 0
+        batch_size = min(100, per_keyword_limit)  # API 每页最多 100
+        while len(collected) < MAX_PAPERS_AQUIRED_FROM_S2 and offset < 1000:  # 设置总偏移上限避免无限循环
+            params = {
+                "query": kw,
+                "limit": batch_size,
+                "offset": offset,
+                "fields": ",".join([
+                    "paperId", "title", "abstract", "authors",
+                    "url", "venue", "externalIds", "publicationDate", "year"
+                ])
+            }
+            resp = requests.get(url_search, headers=headers, params=params)
+            # 处理限速 / 常见错误
+            if resp.status_code == 429:
+                retry_after = resp.headers.get("Retry-After")
+                wait = int(retry_after) if retry_after and retry_after.isdigit() else 2
+                print(f"  触发限流，等待 {wait} 秒...")
+                time.sleep(wait)
+                continue
+            if resp.status_code != 200:
+                print(f"  搜索请求失败: {resp.status_code} - {resp.text}")
+                break
+            data = resp.json()
+            papers = data.get("data", [])
+            if not papers:
+                break
+            # 逐一处理并存入 collected（去重 + 基本过滤）
+            for p in papers:
+                pid = p.get("paperId")
+                if not pid or pid in seen_papers or pid in collected:
+                    continue
+                venue = (p.get("venue") or "").lower()
+                if blacklisted_venues and any(bv in venue for bv in blacklisted_venues):
+                    continue
+                abstract = (p.get("abstract") or "").strip()
+                if not abstract:
+                    continue
+                paper = dict(p)
+                collected[pid] = paper
+            offset += batch_size
+            # 每个请求后必须等待 1 秒（全端点限速 1 req/s）
+            time.sleep(1)
+        # 换下一个关键词前也等 1 秒，避免两次起始请求过快
+        time.sleep(1)
+    # 转换回列表，按发表日期倒序排列
+    papers_list = list(collected.values())
+    def get_date(p):
+        pub_date = p.get("publicationDate")
+        if pub_date:
+            return pub_date
+        year = p.get("year")
+        if year:
+            return f"{year}-12-31"
+        return "1900-01-01"
+    papers_list.sort(key=get_date, reverse=True)
+    print(f"合并去重后共收集 {len(papers_list)} 篇未读论文，取前 10 篇最新。")
+    top_new_papers = papers_list[:10]
+    # 批量获取 TLDR
+    if top_new_papers:
+        time.sleep(1)  # 与上一个搜索请求间隔
+        paper_ids = [p["paperId"] for p in top_new_papers]
+        batch_url = "https://api.semanticscholar.org/graph/v1/paper/batch"
+        batch_params = {"fields": "paperId,tldr"}
+        batch_res = requests.post(
+            batch_url, json={"ids": paper_ids}, headers=headers, params=batch_params
+        )
+        if batch_res.status_code == 200:
+            tldr_data = batch_res.json()
+            tldr_dict = {}
+            for item in tldr_data:
+                if item and isinstance(item.get("tldr"), dict):
+                    tldr_dict[item["paperId"]] = (item["tldr"].get("text") or "").strip()
+            for p in top_new_papers:
+                p["tldrText"] = tldr_dict.get(p["paperId"], "")
+        else:
+            print(f"警告: TLDR 批量请求失败: {batch_res.status_code} - {batch_res.text}")
+            for p in top_new_papers:
+                p["tldrText"] = ""
+    return top_new_papers
+
+
+
 def get_paper_recommendations():
+    
     """通过 Semantic Scholar 寻找相关新论文"""
     url = "https://api.semanticscholar.org/recommendations/v1/papers"
     headers = {"x-api-key": S2_API_KEY}
@@ -237,7 +346,8 @@ def push_to_wechat(content):
 
 if __name__ == "__main__":
     print("正在寻找最新推荐...")
-    new_papers = get_paper_recommendations()
+    # new_papers = get_paper_recommendations()
+    new_papers = get_paper_recommendations_via_keywords()
     if new_papers:
         print(f"找到 {len(new_papers)} 篇最新论文，正在使用 LLM 总结...")
         report = summarize_papers_with_llm(new_papers)
