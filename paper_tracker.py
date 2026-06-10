@@ -253,8 +253,8 @@ def get_paper_recommendations_via_keywords():
             return f"{year}-12-31"
         return "1900-01-01"
     top_new_papers.sort(key=get_date, reverse=True)
-    print(f"合并 arXiv 后共 {len(top_new_papers)} 篇，最终取前 10 篇。")
-    return top_new_papers[:10]
+    print(f"合并 arXiv 后共 {len(top_new_papers)} 篇，最终取前 20 篇。")
+    return top_new_papers[:20]
 
 
 
