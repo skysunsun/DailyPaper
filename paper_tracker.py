@@ -226,35 +226,35 @@ def get_paper_recommendations_via_keywords():
             for p in top_new_papers:
                 p["tldrText"] = ""
     # ===== 新增：调用 arXiv 并合并 =====
-    print("正在从 arXiv 补充关键词搜索结果...")
-    arxiv_papers = search_arxiv(keywords, max_results=15)   # 可根据需要调整
-    # 将已有的 S2 论文的 ArXiv ID 提取出来，用于去重
-    existing_arxiv_ids = set()
-    for p in top_new_papers:
-        ext_id = p.get("externalIds", {}).get("ArXiv")
-        if ext_id:
-            existing_arxiv_ids.add(ext_id.strip().lower())
-    # 合并 arXiv 新论文（去重 + 避免与 S2 中的已读论文重复）
-    for ap in arxiv_papers:
-        arxiv_id = (ap.get("externalIds", {}).get("ArXiv") or "").lower()
-        if arxiv_id in existing_arxiv_ids:
-            continue
-        if ap.get("paperId") and ap["paperId"] in seen_papers:   # seen_papers 来自历史文件
-            continue
-        top_new_papers.append(ap)
-        existing_arxiv_ids.add(arxiv_id)
-    # 重新按日期排序
-    def get_date(p):
-        pub_date = p.get("publicationDate")
-        if pub_date:
-            return pub_date
-        year = p.get("year")
-        if year:
-            return f"{year}-12-31"
-        return "1900-01-01"
-    top_new_papers.sort(key=get_date, reverse=True)
-    print(f"合并 arXiv 后共 {len(top_new_papers)} 篇，最终取前 20 篇。")
-    return top_new_papers[:20]
+    # print("正在从 arXiv 补充关键词搜索结果...")
+    # arxiv_papers = search_arxiv(keywords, max_results=15)   # 可根据需要调整
+    # # 将已有的 S2 论文的 ArXiv ID 提取出来，用于去重
+    # existing_arxiv_ids = set()
+    # for p in top_new_papers:
+    #     ext_id = p.get("externalIds", {}).get("ArXiv")
+    #     if ext_id:
+    #         existing_arxiv_ids.add(ext_id.strip().lower())
+    # # 合并 arXiv 新论文（去重 + 避免与 S2 中的已读论文重复）
+    # for ap in arxiv_papers:
+    #     arxiv_id = (ap.get("externalIds", {}).get("ArXiv") or "").lower()
+    #     if arxiv_id in existing_arxiv_ids:
+    #         continue
+    #     if ap.get("paperId") and ap["paperId"] in seen_papers:   # seen_papers 来自历史文件
+    #         continue
+    #     top_new_papers.append(ap)
+    #     existing_arxiv_ids.add(arxiv_id)
+    # # 重新按日期排序
+    # def get_date(p):
+    #     pub_date = p.get("publicationDate")
+    #     if pub_date:
+    #         return pub_date
+    #     year = p.get("year")
+    #     if year:
+    #         return f"{year}-12-31"
+    #     return "1900-01-01"
+    # top_new_papers.sort(key=get_date, reverse=True)
+    # print(f"合并 arXiv 后共 {len(top_new_papers)} 篇，最终取前 20 篇。")
+    return top_new_papers
 
 
 
