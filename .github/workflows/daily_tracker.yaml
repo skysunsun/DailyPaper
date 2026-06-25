@@ -39,4 +39,5 @@ jobs:
           mkdir -p config
           touch config/seen_papers.txt
           git add config/seen_papers.txt
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-update seen papers history" && git push)
+          git add docs/ || true
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-update daily paper report and history" && git pull --rebase && git push)

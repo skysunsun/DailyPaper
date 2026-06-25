@@ -2,10 +2,13 @@
 
 这是一个基于 `GitHub Actions` 的全自动化科研追踪工具。它利用 Semantic Scholar 的推荐 API以及Arxiv，根据你设定的**关键词**或者**种子论文**自动找到最新相关的研究工作，并利用大语言模型（如 DeepSeek）生成中文深度总结，最后每天准时将内容推送到你的微信上。
 
+同时，项目集成了 **GitHub Pages 静态网页**，自动按年/月归档每日论文报告，提供在线浏览界面。
+
 
 ---
 
 ## 更新日志
+- **2026-06-25**：新增 GitHub Pages 静态网页，按年/月归档每日论文报告，支持在线浏览。
 - **2026-06-09**：新增根据关键词检索。
 - **2026-03-31**：完成核心功能开发和测试，公开仓库。
 - **2026-04-01**：增加出版商黑名单功能。
@@ -101,6 +104,19 @@ bioRxiv
 
 *(此外，系统每天北京时间早上 9:00 会自动运行一次，同时允许手动触发)*。
 
+### 6. 开启 GitHub Pages 在线浏览（可选但推荐）
+
+完成 Actions 运行后，每日报告会自动归档到 `docs/archive/YYYY/MM/YYYY-MM-DD.md`。开启 GitHub Pages 后即可获得一个在线网页，按年/月浏览所有历史报告：
+
+1. 进入你 Fork 后的仓库，点击顶部的 `Settings` (设置)。
+2. 在左侧边栏找到 `Pages`。
+3. 在 `Build and deployment` 下的 `Source` 选择 **Deploy from a branch**。
+4. `Branch` 选择 `main`，文件夹选择 `/docs`，点击 `Save`。
+5. 等待 1~2 分钟，页面顶部会显示你的站点地址，形如 `https://<你的用户名>.github.io/DailyPaper/`。
+6. 打开该地址即可看到论文追踪网页，左侧侧边栏按 **年 > 月 > 日** 分类导航，点击日期即可在右侧渲染当日 Markdown 报告。
+
+> **💡 提示**：网页使用 `marked.js`（CDN 加载）在前端渲染 Markdown，无需构建步骤。`docs/.nojekyll` 文件已禁用 Jekyll，确保 `docs/` 下所有文件原样发布。
+
 ---
 
 ## 工作原理
@@ -108,6 +124,15 @@ bioRxiv
 ### 防止重复推送
 
 脚本每次运行前会读取 `config/seen_papers.txt` 中的论文ID(Semantic Scholar ID)历史记录，并自动过滤掉已推送过的论文。发送完毕后，新推送的论文ID会被追加到该文件中，GitHub Actions 机器人会自动将此变更提交并推送到你的仓库，保证下次运行时不会重复推送同一篇论文。
+
+### 每日归档与 GitHub Pages
+
+每次运行脚本时，除了推送到微信，还会执行以下操作：
+
+- 在 `docs/archive/YYYY/MM/` 目录下生成 `YYYY-MM-DD.md` 文件，包含当日所有论文的 AI 总结。
+- 更新 `docs/manifest.json`，记录所有已生成报告的日期与论文数量。
+- GitHub Actions 机器人自动提交并推送这些变更到 `main` 分支。
+- GitHub Pages 检测到 `docs/` 目录更新后，自动重新部署静态网页。
 
 ### 日期排序与最新优选
 

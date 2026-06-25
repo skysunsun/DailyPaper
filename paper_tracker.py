@@ -485,6 +485,90 @@ def push_to_wechat(content):
     requests.post(url, data=data)
 
 
+# ===== GitHub Pages 静态站点归档 =====
+import json
+from datetime import datetime
+
+DOCS_DIR = "docs"
+ARCHIVE_DIR = os.path.join(DOCS_DIR, "archive")
+MANIFEST_FILE = os.path.join(DOCS_DIR, "manifest.json")
+
+
+def save_daily_markdown(report_content, papers):
+    """将每日报告保存为 docs/archive/YYYY/MM/YYYY-MM-DD.md，并更新 manifest。"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    year = datetime.now().strftime("%Y")
+    month = datetime.now().strftime("%m")
+
+    # 创建归档目录
+    archive_path = os.path.join(ARCHIVE_DIR, year, month)
+    os.makedirs(archive_path, exist_ok=True)
+
+    # 生成带标题的 Markdown 内容
+    paper_count = len(papers)
+    title = f"# 📚 每日论文追踪 - {today}"
+
+    header = (
+        f"{title}\n\n"
+        f"> 共追踪到 **{paper_count}** 篇最新论文 | "
+        f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        f"---\n\n"
+    )
+
+    full_content = header + report_content
+
+    # 写入文件
+    md_file_path = os.path.join(archive_path, f"{today}.md")
+    with open(md_file_path, "w", encoding="utf-8") as f:
+        f.write(full_content)
+
+    print(f"已生成每日归档: {md_file_path}")
+
+    # 更新 manifest
+    update_manifest(today, paper_count)
+    return md_file_path
+
+
+def update_manifest(date_str, paper_count):
+    """更新 docs/manifest.json，记录所有已生成的日报。"""
+    manifest = {"dates": []}
+
+    # 读取现有 manifest
+    if os.path.exists(MANIFEST_FILE):
+        try:
+            with open(MANIFEST_FILE, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            manifest = {"dates": []}
+
+    # 确保 dates 列表存在
+    if "dates" not in manifest:
+        manifest["dates"] = []
+
+    # 检查是否已存在该日期，避免重复
+    existing_entry = None
+    for entry in manifest["dates"]:
+        if isinstance(entry, dict) and entry.get("date") == date_str:
+            existing_entry = entry
+            break
+
+    if existing_entry:
+        existing_entry["count"] = paper_count
+    else:
+        manifest["dates"].append({"date": date_str, "count": paper_count})
+
+    # 按日期降序排序
+    manifest["dates"].sort(key=lambda x: x["date"] if isinstance(x, dict) else x, reverse=True)
+    manifest["updatedAt"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 写回 manifest
+    os.makedirs(DOCS_DIR, exist_ok=True)
+    with open(MANIFEST_FILE, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, ensure_ascii=False, indent=2)
+
+    print(f"已更新 manifest: {MANIFEST_FILE}")
+
+
 if __name__ == "__main__":
     print("正在寻找最新推荐...")
     # new_papers = get_paper_recommendations()
@@ -492,6 +576,8 @@ if __name__ == "__main__":
     if new_papers:
         print(f"找到 {len(new_papers)} 篇最新论文，正在使用 LLM 总结...")
         report = summarize_papers_with_llm(new_papers)
+        print("正在生成每日归档 Markdown...")
+        save_daily_markdown(report, new_papers)
         print("正在推送到微信...")
         push_to_wechat(report)
         print("更新历史记录...")
