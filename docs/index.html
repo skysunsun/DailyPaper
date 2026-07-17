@@ -208,14 +208,19 @@
 
         .content-wrapper h2 {
             font-size: 20px;
-            margin: 28px 0 12px;
+            margin: 32px 0 16px;
             color: var(--text);
+            padding: 10px 16px;
+            border-radius: 8px;
+            border-left: 4px solid var(--primary);
+            background: var(--primary-light);
         }
 
         .content-wrapper h3 {
             font-size: 16px;
-            margin: 20px 0 8px;
+            margin: 22px 0 8px;
             color: var(--text);
+            line-height: 1.5;
         }
 
         .content-wrapper p {
@@ -241,11 +246,24 @@
             color: var(--text);
         }
 
+        /* 行内 code 主要用于「相关度 XX」徽章，做成小药丸样式 */
         .content-wrapper code {
-            background: var(--border);
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-size: 0.9em;
+            background: var(--primary);
+            color: #fff;
+            padding: 1px 8px;
+            border-radius: 999px;
+            font-size: 0.78em;
+            font-weight: 600;
+            vertical-align: middle;
+            white-space: nowrap;
+        }
+
+        /* 速读论文的期刊/日期小字 */
+        .content-wrapper sub {
+            display: inline-block;
+            margin-top: 2px;
+            font-size: 12px;
+            color: var(--text-muted);
         }
 
         .content-wrapper pre {
@@ -406,7 +424,7 @@
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <h1>📚 每日论文追踪</h1>
-                <div class="subtitle">基于 AI 的学术论文日报</div>
+                <div class="subtitle">AI 按研究主题相关度排序 · 精读 / 速读双模块</div>
             </div>
             <nav id="nav-content">
                 <div class="loading">

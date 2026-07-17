@@ -1,4 +1,6 @@
 import os
+import re
+import json
 import requests
 from openai import OpenAI
 import time
@@ -11,7 +13,32 @@ SERVERCHAN_KEY = os.getenv("SERVERCHAN_KEY")
 
 HISTORY_FILE = "config/seen_papers.txt"
 BLACKLIST_FILE = "config/blacklisted_venues.txt"
+RESEARCH_TOPIC_FILE = "config/research_topic.txt"
 MAX_PAPERS_AQUIRED_FROM_S2 = 100
+
+# --- 排序 / 分层参数 ---
+DEFAULT_RESEARCH_TOPIC = "行人过街行为与过街意图预测（Pedestrian Crossing Behavior / Intention Prediction）"
+CANDIDATE_POOL_SIZE = 25   # 送入大模型做相关度排序的候选池大小
+NUM_DEEP_READ = 5          # 精读论文数量（高相关，做完整深度总结）
+NUM_QUICK_READ = 8         # 速读论文数量（次相关，做一句话要点）
+
+# --- LLM 接入配置（统一在此处维护，便于替换模型/服务商） ---
+LLM_BASE_URL = "https://chat.cqjtu.edu.cn/ds/api/v1"
+LLM_MODEL = "deepseek-v4pro"
+
+
+def get_llm_client():
+    """统一构造 LLM 客户端"""
+    return OpenAI(api_key=LLM_API_KEY, base_url=LLM_BASE_URL)
+
+
+def read_research_topic():
+    """读取研究主题（忽略 # 注释行），取首个有效行作为排序锚点。"""
+    lines = read_list(RESEARCH_TOPIC_FILE)
+    for line in lines:
+        if not line.startswith("#"):
+            return line
+    return DEFAULT_RESEARCH_TOPIC
 
 
 def read_list(file_path):
@@ -37,6 +64,42 @@ def read_seed_papers(file_path):
             if line:
                 papers.append(line)
     return papers
+
+
+def fetch_tldr_batch(papers, headers):
+    """通过 Semantic Scholar Batch API 批量回补 TLDR 文本（一句话概括）。"""
+    if not papers:
+        return papers
+    paper_ids = [p.get("paperId") for p in papers if p.get("paperId")]
+    if not paper_ids:
+        for p in papers:
+            p.setdefault("tldrText", "")
+        return papers
+
+    time.sleep(1)
+    batch_url = "https://api.semanticscholar.org/graph/v1/paper/batch"
+    batch_params = {"fields": "paperId,tldr"}
+    try:
+        batch_res = requests.post(
+            batch_url, json={"ids": paper_ids}, headers=headers, params=batch_params
+        )
+        if batch_res.status_code == 200:
+            tldr_dict = {}
+            for item in batch_res.json():
+                if item and isinstance(item.get("tldr"), dict):
+                    tldr_dict[item["paperId"]] = (item["tldr"].get("text") or "").strip()
+            for p in papers:
+                p["tldrText"] = tldr_dict.get(p.get("paperId"), "")
+        else:
+            print(f"警告: TLDR 批量请求失败: {batch_res.status_code} - {batch_res.text}")
+            for p in papers:
+                p.setdefault("tldrText", "")
+    except Exception as e:
+        print(f"警告: TLDR 批量请求异常: {e}")
+        for p in papers:
+            p.setdefault("tldrText", "")
+    return papers
+
 
 def search_arxiv(keywords, max_results=30):
     """
@@ -202,29 +265,11 @@ def get_paper_recommendations_via_keywords():
             return f"{year}-12-31"
         return "1900-01-01"
     papers_list.sort(key=get_date, reverse=True)
-    print(f"合并去重后共收集 {len(papers_list)} 篇未读论文，取前 10 篇最新。")
-    top_new_papers = papers_list[:10]
-    # 批量获取 TLDR
-    if top_new_papers:
-        time.sleep(1)  # 与上一个搜索请求间隔
-        paper_ids = [p["paperId"] for p in top_new_papers]
-        batch_url = "https://api.semanticscholar.org/graph/v1/paper/batch"
-        batch_params = {"fields": "paperId,tldr"}
-        batch_res = requests.post(
-            batch_url, json={"ids": paper_ids}, headers=headers, params=batch_params
-        )
-        if batch_res.status_code == 200:
-            tldr_data = batch_res.json()
-            tldr_dict = {}
-            for item in tldr_data:
-                if item and isinstance(item.get("tldr"), dict):
-                    tldr_dict[item["paperId"]] = (item["tldr"].get("text") or "").strip()
-            for p in top_new_papers:
-                p["tldrText"] = tldr_dict.get(p["paperId"], "")
-        else:
-            print(f"警告: TLDR 批量请求失败: {batch_res.status_code} - {batch_res.text}")
-            for p in top_new_papers:
-                p["tldrText"] = ""
+    print(f"合并去重后共收集 {len(papers_list)} 篇未读论文，取前 {CANDIDATE_POOL_SIZE} 篇最新作为排序候选池。")
+    # 扩大候选池，交由大模型按研究主题相关度重排序后再分层
+    top_new_papers = papers_list[:CANDIDATE_POOL_SIZE]
+    # 批量回补 TLDR，为后续排序与总结提供上下文
+    fetch_tldr_batch(top_new_papers, headers)
     # ===== 新增：调用 arXiv 并合并 =====
     # print("正在从 arXiv 补充关键词搜索结果...")
     # arxiv_papers = search_arxiv(keywords, max_results=15)   # 可根据需要调整
@@ -325,39 +370,11 @@ def get_paper_recommendations():
 
     unseen_papers.sort(key=get_date, reverse=True)
 
-    # print(f"筛选后剩余 {len(unseen_papers)} 篇未读论文，正在获取 TLDR...")
+    # 扩大候选池，交由大模型按研究主题相关度重排序后再分层
+    top_new_papers = unseen_papers[:CANDIDATE_POOL_SIZE]
 
-    # 只取前 10 篇最新的
-    top_new_papers = unseen_papers[:10]
-
-    # 步骤 2：调用 Batch API 批量查这 10 篇的 TLDR
-    if top_new_papers:
-        time.sleep(1)
-        paper_ids = [p["paperId"] for p in top_new_papers]
-        batch_url = "https://api.semanticscholar.org/graph/v1/paper/batch"
-        batch_params = {"fields": "paperId,tldr"}
-
-        batch_res = requests.post(
-            batch_url, json={"ids": paper_ids}, headers=headers, params=batch_params
-        )
-
-        if batch_res.status_code == 200:
-            tldr_data = batch_res.json()
-            # 建立一个 { 'paperId': 'TLDR 文本' } 的映射字典
-            tldr_dict = {}
-            for item in tldr_data:
-                if item and item.get("tldr") and isinstance(item.get("tldr"), dict):
-                    tldr_dict[item["paperId"]] = (
-                        item["tldr"].get("text") or ""
-                    ).strip()
-
-            # 将提取到的 tldr 文本塞回论文数据里
-            for p in top_new_papers:
-                p["tldrText"] = tldr_dict.get(p["paperId"], "")
-        else:
-            print(f"警告: TLDR 批量请求失败: {batch_res.text}")
-            for p in top_new_papers:
-                p["tldrText"] = ""
+    # 批量回补 TLDR
+    fetch_tldr_batch(top_new_papers, headers)
 
     return top_new_papers
 
@@ -394,41 +411,123 @@ def request_with_retry(method, url, max_retry=5, **kwargs):
     return resp
 
 
-def summarize_papers_with_llm(papers):
-    """调用大模型进行总结"""
-    client = OpenAI(
-        api_key=LLM_API_KEY, base_url="https://chat.cqjtu.edu.cn/ds/api/v1"
-    )  # deepseek
-    # client = OpenAI(
-    #     api_key=LLM_API_KEY, base_url="https://api.siliconflow.cn/v1"
-    # )  # siliconflow
+def _paper_link(paper):
+    """生成论文永久链接：优先 DOI，其次 API url，最后 Semantic Scholar 页面。"""
+    doi = ""
+    external_ids = paper.get("externalIds")
+    if isinstance(external_ids, dict):
+        doi = (external_ids.get("DOI") or "").strip()
+    url = f"https://doi.org/{doi}" if doi else paper.get("url", "")
+    if not url:
+        url = f"https://www.semanticscholar.org/paper/{paper.get('paperId')}"
+    return url
 
-    report_content = ""
-    for idx, paper in enumerate(papers):
-        title = paper.get("title", "无标题")
-        date = paper.get("publicationDate") or paper.get("year") or "未知日期"
-        abstract_text = (paper.get("abstract") or "").strip()
-        tldr_text = (paper.get("tldrText") or "").strip()
 
-        # 优先使用 DOI 生成永久链接
-        doi = ""
-        external_ids = paper.get("externalIds")
-        if isinstance(external_ids, dict):
-            doi = (external_ids.get("DOI") or "").strip()
-        url = f"https://doi.org/{doi}" if doi else paper.get("url", "")
-        if url == "":
-            url = f"https://www.semanticscholar.org/paper/{paper.get('paperId')}"
+def _extract_json_array(text):
+    """从大模型返回文本中稳健地抽取 JSON 数组。"""
+    if not text:
+        return None
+    # 去掉 ```json ... ``` 代码围栏
+    text = re.sub(r"```(?:json)?", "", text).strip()
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    # 兜底：截取第一个 [ 到最后一个 ] 之间的内容
+    start, end = text.find("["), text.rfind("]")
+    if start != -1 and end != -1 and end > start:
+        try:
+            return json.loads(text[start:end + 1])
+        except Exception:
+            return None
+    return None
 
-        venue_name = (paper.get("venue") or "").strip() or "未知会议/期刊"
 
-        if not abstract_text and tldr_text:
-            abstract_text = f"（原始摘要缺失，以下为TLDR）{tldr_text}"
-        if not abstract_text:
-            abstract_text = "无摘要"
+def rank_papers_by_relevance(papers, topic):
+    """用大模型对候选论文按与研究主题的相关度打分(0-100)并降序排序。
 
-        authors = format_authors(paper.get("authors", []))
+    为每篇论文写入 relevanceScore(int) 与 relevanceReason(str)。
+    大模型调用失败时回退为按原顺序（发表日期）排序，并给出中性分数。
+    """
+    if not papers:
+        return papers
 
-        prompt = f"""
+    # 构造精简候选清单，控制 token 消耗
+    entries = []
+    for i, p in enumerate(papers):
+        title = (p.get("title") or "").strip()
+        tldr = (p.get("tldrText") or "").strip()
+        abstract = (p.get("abstract") or "").strip().replace("\n", " ")[:280]
+        entries.append(f"[{i}] 标题: {title}\n    TLDR: {tldr or '无'}\n    摘要: {abstract or '无'}")
+    catalog = "\n\n".join(entries)
+
+    prompt = f"""你是「{topic}」领域的资深审稿人。下面是今日候选论文清单，请评估每篇与该研究主题的相关程度。
+
+评分标准（0-100 整数）：
+- 90-100：直接研究行人过街意图/行为/轨迹预测
+- 70-89：自动驾驶/智能交通中的行人检测、VRU(弱势道路使用者)交互、行人轨迹等强相关
+- 40-69：通用轨迹/时序预测、因果推断、可解释性等方法层面相关
+- 10-39：机器学习/计算机视觉通用方法，弱相关
+- 0-9：基本无关
+
+请严格只输出一个 JSON 数组，不要任何多余文字，每个元素形如：
+{{"id": 0, "score": 85, "reason": "简短中文理由，不超过18字"}}
+
+候选论文清单：
+{catalog}
+"""
+
+    try:
+        client = get_llm_client()
+        response = client.chat.completions.create(
+            model=LLM_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        result = _extract_json_array(response.choices[0].message.content)
+    except Exception as e:
+        print(f"警告: 相关度排序调用失败，回退为日期排序: {e}")
+        result = None
+
+    score_map = {}
+    if isinstance(result, list):
+        for item in result:
+            if not isinstance(item, dict):
+                continue
+            idx = item.get("id")
+            if isinstance(idx, int) and 0 <= idx < len(papers):
+                try:
+                    score = int(item.get("score", 0))
+                except (TypeError, ValueError):
+                    score = 0
+                score = max(0, min(100, score))
+                score_map[idx] = (score, (item.get("reason") or "").strip())
+
+    for i, p in enumerate(papers):
+        if i in score_map:
+            p["relevanceScore"], p["relevanceReason"] = score_map[i]
+        else:
+            # 未被模型评分（或调用失败）：给中性分并保持原相对次序
+            p["relevanceScore"] = p.get("relevanceScore", 50)
+            p["relevanceReason"] = p.get("relevanceReason", "")
+
+    papers.sort(key=lambda x: x.get("relevanceScore", 0), reverse=True)
+    print("相关度排序完成，得分预览: " + ", ".join(
+        f"{p.get('relevanceScore')}" for p in papers[:CANDIDATE_POOL_SIZE]
+    ))
+    return papers
+
+
+def summarize_deep_paper(paper, client):
+    """对单篇精读论文做完整深度总结（问题 / 方法 / 创新与效果）。"""
+    title = paper.get("title", "无标题")
+    abstract_text = (paper.get("abstract") or "").strip()
+    tldr_text = (paper.get("tldrText") or "").strip()
+    if not abstract_text and tldr_text:
+        abstract_text = f"（原始摘要缺失，以下为TLDR）{tldr_text}"
+    if not abstract_text:
+        abstract_text = "无摘要"
+
+    prompt = f"""
 你是一个严谨的学术专家。请基于以下论文信息，提取核心内容并转化为中文。
 要求：
 1. 极其精简、具体，拒绝空泛的套话，保留专业术语。
@@ -442,21 +541,134 @@ def summarize_papers_with_llm(papers):
 TLDR: {tldr_text or "无"}
 摘要原文: {abstract_text}
 """
-
+    try:
         response = client.chat.completions.create(
-            model="deepseek-v4pro",
-            # model="deepseek-ai/DeepSeek-V3.2",
+            model=LLM_MODEL,
             messages=[{"role": "user", "content": prompt}],
         )
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"警告: 精读总结失败 [{title[:30]}]: {e}")
+        return f"**[AI 总结生成失败]**：{e}"
 
-        summary = response.choices[0].message.content
+
+def summarize_quick_papers(papers, client):
+    """对速读论文批量生成中文一句话要点（单次调用，节省成本）。
+
+    返回 {index: 一句话中文要点} 映射；失败时回退为 TLDR。
+    """
+    result_map = {}
+    if not papers:
+        return result_map
+
+    entries = []
+    for i, p in enumerate(papers):
+        title = (p.get("title") or "").strip()
+        tldr = (p.get("tldrText") or "").strip()
+        abstract = (p.get("abstract") or "").strip().replace("\n", " ")[:220]
+        entries.append(f"[{i}] 标题: {title}\n    TLDR: {tldr or '无'}\n    摘要: {abstract or '无'}")
+    catalog = "\n\n".join(entries)
+
+    prompt = f"""你是一个学术助手。请为下列每篇论文写一句话中文速读要点（点明做了什么、用了什么方法或有何亮点），每条不超过40字，保留专业术语，不要客套话。
+
+请严格只输出一个 JSON 数组，每个元素形如：
+{{"id": 0, "point": "一句话要点"}}
+
+论文清单：
+{catalog}
+"""
+    try:
+        response = client.chat.completions.create(
+            model=LLM_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        parsed = _extract_json_array(response.choices[0].message.content)
+        if isinstance(parsed, list):
+            for item in parsed:
+                if isinstance(item, dict) and isinstance(item.get("id"), int):
+                    result_map[item["id"]] = (item.get("point") or "").strip()
+    except Exception as e:
+        print(f"警告: 速读要点批量生成失败，回退为 TLDR: {e}")
+
+    # 兜底：缺失的用 TLDR 填充
+    for i, p in enumerate(papers):
+        if not result_map.get(i):
+            result_map[i] = (p.get("tldrText") or "").strip() or "（暂无要点）"
+    return result_map
+
+
+def build_report(deep_papers, quick_papers, topic):
+    """生成两段式 Markdown 报告：🎯 精读论文 + ⚡ 速读论文。"""
+    client = get_llm_client()
+    report = f"> **研究主题**：{topic}\n\n"
+
+    # ===== 精读论文 =====
+    report += "## 🎯 精读论文（高相关 · 深度解析）\n\n"
+    if deep_papers:
+        for idx, paper in enumerate(deep_papers):
+            title = paper.get("title", "无标题")
+            date = paper.get("publicationDate") or paper.get("year") or "未知日期"
+            venue_name = (paper.get("venue") or "").strip() or "未知会议/期刊"
+            authors = format_authors(paper.get("authors", []))
+            url = _paper_link(paper)
+            tldr_text = (paper.get("tldrText") or "").strip()
+            abstract_text = (paper.get("abstract") or "").strip() or "无摘要"
+            score = paper.get("relevanceScore", "-")
+            reason = paper.get("relevanceReason", "")
+            summary = summarize_deep_paper(paper, client)
+
+            report += (
+                f"### {idx + 1}. [{title}]({url})\n"
+                f"`相关度 {score}` {('· ' + reason) if reason else ''}\n\n"
+                f"*{venue_name}* | {authors} | {date}\n\n"
+                f"**TLDR:** {tldr_text or '无'}\n\n"
+                f"> {abstract_text}\n\n"
+                f"{summary}\n\n---\n"
+            )
+    else:
+        report += "_今日暂无高相关论文。_\n\n---\n"
+
+    # ===== 速读论文 =====
+    report += "\n## ⚡ 速读论文（泛读 · 一句话要点）\n\n"
+    if quick_papers:
+        points = summarize_quick_papers(quick_papers, client)
+        for idx, paper in enumerate(quick_papers):
+            title = paper.get("title", "无标题")
+            date = paper.get("publicationDate") or paper.get("year") or "未知日期"
+            venue_name = (paper.get("venue") or "").strip() or "未知会议/期刊"
+            url = _paper_link(paper)
+            score = paper.get("relevanceScore", "-")
+            point = points.get(idx, "")
+            report += (
+                f"**{idx + 1}. [{title}]({url})** `相关度 {score}`\n\n"
+                f"{point}\n\n"
+                f"<sub>{venue_name} | {date}</sub>\n\n"
+            )
+    else:
+        report += "_今日暂无速读论文。_\n\n"
+
+    return report
+
+
+def summarize_papers_with_llm(papers):
+    """[兼容旧接口] 直接对论文列表做完整总结，不做分层。"""
+    client = get_llm_client()
+    report_content = ""
+    for idx, paper in enumerate(papers):
+        title = paper.get("title", "无标题")
+        date = paper.get("publicationDate") or paper.get("year") or "未知日期"
+        venue_name = (paper.get("venue") or "").strip() or "未知会议/期刊"
+        authors = format_authors(paper.get("authors", []))
+        url = _paper_link(paper)
+        tldr_text = (paper.get("tldrText") or "").strip()
+        abstract_text = (paper.get("abstract") or "").strip() or "无摘要"
+        summary = summarize_deep_paper(paper, client)
         report_content += (
             f"## {idx+1}\n[{title}]({url})\n*{venue_name}* | {authors} | {date}\n\n"
             f"**TLDR:** {tldr_text}\n\n"
             f"> {abstract_text}\n\n"
             f"{summary}\n\n---\n"
         )
-
     return report_content
 
 
@@ -486,7 +698,6 @@ def push_to_wechat(content):
 
 
 # ===== GitHub Pages 静态站点归档 =====
-import json
 from datetime import datetime
 
 DOCS_DIR = "docs"
@@ -494,7 +705,7 @@ ARCHIVE_DIR = os.path.join(DOCS_DIR, "archive")
 MANIFEST_FILE = os.path.join(DOCS_DIR, "manifest.json")
 
 
-def save_daily_markdown(report_content, papers):
+def save_daily_markdown(report_content, papers, topic=None, deep_count=None, quick_count=None):
     """将每日报告保存为 docs/archive/YYYY/MM/YYYY-MM-DD.md，并更新 manifest。"""
     today = datetime.now().strftime("%Y-%m-%d")
     year = datetime.now().strftime("%Y")
@@ -508,12 +719,18 @@ def save_daily_markdown(report_content, papers):
     paper_count = len(papers)
     title = f"# 📚 每日论文追踪 - {today}"
 
-    header = (
-        f"{title}\n\n"
-        f"> 共追踪到 **{paper_count}** 篇最新论文 | "
-        f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-        f"---\n\n"
-    )
+    if deep_count is not None and quick_count is not None:
+        count_line = (
+            f"> 共 **{paper_count}** 篇（🎯 精读 **{deep_count}** / ⚡ 速读 **{quick_count}**） | "
+            f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        )
+    else:
+        count_line = (
+            f"> 共追踪到 **{paper_count}** 篇最新论文 | "
+            f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        )
+
+    header = f"{title}\n\n" + count_line + "---\n\n"
 
     full_content = header + report_content
 
@@ -570,18 +787,32 @@ def update_manifest(date_str, paper_count):
 
 
 if __name__ == "__main__":
+    topic = read_research_topic()
+    print(f"研究主题: {topic}")
     print("正在寻找最新推荐...")
-    # new_papers = get_paper_recommendations()
-    new_papers = get_paper_recommendations_via_keywords()
-    if new_papers:
-        print(f"找到 {len(new_papers)} 篇最新论文，正在使用 LLM 总结...")
-        report = summarize_papers_with_llm(new_papers)
+    # candidates = get_paper_recommendations()
+    candidates = get_paper_recommendations_via_keywords()
+
+    if candidates:
+        print(f"找到 {len(candidates)} 篇候选论文，正在用大模型按主题相关度排序...")
+        candidates = rank_papers_by_relevance(candidates, topic)
+
+        # 按相关度分层：精读（高相关，深度总结） + 速读（次相关，一句话要点）
+        deep_papers = candidates[:NUM_DEEP_READ]
+        quick_papers = candidates[NUM_DEEP_READ:NUM_DEEP_READ + NUM_QUICK_READ]
+        shown_papers = deep_papers + quick_papers
+        print(f"分层完成：精读 {len(deep_papers)} 篇 / 速读 {len(quick_papers)} 篇。")
+
+        print("正在生成两段式报告（精读 + 速读）...")
+        report = build_report(deep_papers, quick_papers, topic)
+
         print("正在生成每日归档 Markdown...")
-        save_daily_markdown(report, new_papers)
+        save_daily_markdown(report, shown_papers, topic=topic,
+                            deep_count=len(deep_papers), quick_count=len(quick_papers))
         print("正在推送到微信...")
         push_to_wechat(report)
         print("更新历史记录...")
-        update_history(new_papers)
+        update_history(shown_papers)
         print("全部完成！")
     else:
         print("今天没有发现未读的最新相关文献。")
