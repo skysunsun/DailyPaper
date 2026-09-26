@@ -1,15 +1,15 @@
-Pedestrian Intention Prediction
-Pedestrian Crossing Intent Recognition
-Pedestrian Behavior Prediction
-Pedestrian Action Prediction
-Multivariate Time Series Forecasting
+Pedestrian Crossing Intention Prediction
+Pedestrian Crossing Behavior Prediction
+Temporal Modeling
+Explainable Pedestrian Prediction
 Interpretable Time Series Prediction
 Causal Inference for Time Series
-Causal Discovery in Multivariate Time Series
-Granger Causality
 Causal Representation Learning
-Explainable AI for Trajectory Prediction
-Explainability in Motion Forecasting
-Interpretability in Autonomous Driving
-Causal Attention Model
-Causal Deep Learning
+Counterfactual Explanation
+Safety-Critical Pedestrian Prediction
+Risk-Aware Prediction
+Uncertainty Quantification
+Prediction Calibration
+Selective Prediction
+Out-of-Distribution Detection
+Trustworthy Autonomous Driving
