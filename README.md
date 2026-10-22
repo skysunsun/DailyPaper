@@ -162,9 +162,7 @@ bioRxiv
 ---
 
 ## 进阶定制
-
 这个仓库基本通过 vibe coding 实现。欢迎根据自己的需求进行修改和优化：
-
 - **更改运行时间**：编辑 `.github/workflows/daily_tracker.yml` 文件中的 `cron: '0 1 * * *'` (注意这是 UTC 时间)。
 - **更改 AI 提示词**：直接修改 `paper_tracker.py` 中的 `prompt` 字段，以生成符合你排版和侧重点的报告。 
 - **替换其他的大模型**：如果你想用诸如 Kimi、通义千问等，只要它们兼容 OpenAI SDK 格式，直接在 `paper_tracker.py` 修改 `base_url` 即可。
