@@ -437,5 +437,23 @@
       "count": 10
     }
   ],
-  "updatedAt": "2026-10-31 00:19:58"
+  "updatedAt": "2026-10-31 10:14:52",
+  "researchTopic": "行人过街行为与过街意图预测（Pedestrian Crossing Behavior / Intention Prediction），关注面向自动驾驶与智能交通的行人轨迹预测、行人动作/意图识别、车-人交互建模，以及相关的时序预测、因果推断与可解释性方法。",
+  "keywords": [
+    "Pedestrian Crossing Intention Prediction",
+    "Pedestrian Crossing Behavior Prediction",
+    "Temporal Modeling",
+    "Explainable Pedestrian Prediction",
+    "Interpretable Time Series Prediction",
+    "Causal Inference for Time Series",
+    "Causal Representation Learning",
+    "Counterfactual Explanation",
+    "Safety-Critical Pedestrian Prediction",
+    "Risk-Aware Prediction",
+    "Uncertainty Quantification",
+    "Prediction Calibration",
+    "Selective Prediction",
+    "Out-of-Distribution Detection",
+    "Trustworthy Autonomous Driving"
+  ]
 }

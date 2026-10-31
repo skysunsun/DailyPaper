@@ -14,10 +14,11 @@ SERVERCHAN_KEY = os.getenv("SERVERCHAN_KEY")
 HISTORY_FILE = "config/seen_papers.txt"
 BLACKLIST_FILE = "config/blacklisted_venues.txt"
 RESEARCH_TOPIC_FILE = "config/research_topic.txt"
+KEYWORDS_FILE = "config/keywords.txt"
 MAX_PAPERS_AQUIRED_FROM_S2 = 100
 
 # --- 排序 / 分层参数 ---
-DEFAULT_RESEARCH_TOPIC = "行人过街行为与过街意图预测（Pedestrian Crossing Behavior / Intention Prediction）"
+DEFAULT_RESEARCH_TOPIC = "行人行为预测、时序预测、因果推断与可解释性研究"
 CANDIDATE_POOL_SIZE = 25   # 送入大模型做相关度排序的候选池大小
 NUM_DEEP_READ = 5          # 精读论文数量（高相关，做完整深度总结）
 NUM_QUICK_READ = 8         # 速读论文数量（次相关，做一句话要点）
@@ -47,6 +48,11 @@ def read_list(file_path):
         return []
     with open(file_path, "r", encoding="utf-8") as f:
         return [line.strip() for line in f if line.strip()]
+
+
+def read_keywords():
+    """读取检索关键词，忽略空行和 # 注释行。"""
+    return [line for line in read_list(KEYWORDS_FILE) if not line.startswith("#")]
 
 
 def read_seed_papers(file_path):
@@ -189,14 +195,8 @@ def get_paper_recommendations_via_keywords():
     """通过关键词搜索 Semantic Scholar，获取新论文推荐"""
     url_search = "https://api.semanticscholar.org/graph/v1/paper/search"
     headers = {"x-api-key": S2_API_KEY}
-    # 读取关键词
-    keywords_path = "config/keywords.txt"
-    try:
-        with open(keywords_path, "r", encoding="utf-8") as f:
-            keywords = [line.strip() for line in f if line.strip()]
-    except FileNotFoundError:
-        print(f"错误：关键词文件 {keywords_path} 不存在。")
-        return []
+    # 读取关键词（忽略注释，网页也通过同一函数同步展示）
+    keywords = read_keywords()
     if not keywords:
         print("错误：关键词列表为空。")
         return []
@@ -463,12 +463,13 @@ def rank_papers_by_relevance(papers, topic):
 
     prompt = f"""你是「{topic}」领域的资深审稿人。下面是今日候选论文清单，请评估每篇与该研究主题的相关程度。
 
-评分标准（0-100 整数）：
-- 90-100：直接研究行人过街意图/行为/轨迹预测
-- 70-89：自动驾驶/智能交通中的行人检测、VRU(弱势道路使用者)交互、行人轨迹等强相关
-- 40-69：通用轨迹/时序预测、因果推断、可解释性等方法层面相关
-- 10-39：机器学习/计算机视觉通用方法，弱相关
+评分标准（0-100 整数，始终以本条消息给出的研究主题为准）：
+- 90-100：直接研究该主题的核心问题，研究对象与任务均高度吻合
+- 70-89：研究该主题的关键子问题，或应用场景、数据对象高度相关
+- 40-69：不直接研究该主题，但核心方法可明显迁移到该主题
+- 10-39：仅有通用技术或背景上的弱关联
 - 0-9：基本无关
+不要沿用任何既有领域偏好，也不要因为论文属于热门方向而额外加分。
 
 请严格只输出一个 JSON 数组，不要任何多余文字，每个元素形如：
 {{"id": 0, "score": 85, "reason": "简短中文理由，不超过18字"}}
@@ -746,8 +747,11 @@ def save_daily_markdown(report_content, papers, topic=None, deep_count=None, qui
     return md_file_path
 
 
-def update_manifest(date_str, paper_count):
-    """更新 docs/manifest.json，记录所有已生成的日报。"""
+def update_manifest(date_str=None, paper_count=None):
+    """更新报告索引，并同步网页展示所需的最新研究主题和关键词。
+
+    不传日期时只刷新站点配置，不会创建空白日报。
+    """
     manifest = {"dates": []}
 
     # 读取现有 manifest
@@ -758,24 +762,28 @@ def update_manifest(date_str, paper_count):
         except (json.JSONDecodeError, IOError):
             manifest = {"dates": []}
 
-    # 确保 dates 列表存在
-    if "dates" not in manifest:
+    if not isinstance(manifest.get("dates"), list):
         manifest["dates"] = []
 
-    # 检查是否已存在该日期，避免重复
-    existing_entry = None
-    for entry in manifest["dates"]:
-        if isinstance(entry, dict) and entry.get("date") == date_str:
-            existing_entry = entry
-            break
+    if date_str is not None:
+        existing_entry = None
+        for entry in manifest["dates"]:
+            if isinstance(entry, dict) and entry.get("date") == date_str:
+                existing_entry = entry
+                break
 
-    if existing_entry:
-        existing_entry["count"] = paper_count
-    else:
-        manifest["dates"].append({"date": date_str, "count": paper_count})
+        if existing_entry:
+            if paper_count is not None:
+                existing_entry["count"] = paper_count
+        else:
+            manifest["dates"].append({"date": date_str, "count": paper_count or 0})
 
     # 按日期降序排序
     manifest["dates"].sort(key=lambda x: x["date"] if isinstance(x, dict) else x, reverse=True)
+
+    # 网页每次读取 manifest，确保配置修改后不再展示旧主题和旧关键词。
+    manifest["researchTopic"] = read_research_topic()
+    manifest["keywords"] = read_keywords()
     manifest["updatedAt"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # 写回 manifest
@@ -789,6 +797,8 @@ def update_manifest(date_str, paper_count):
 if __name__ == "__main__":
     topic = read_research_topic()
     print(f"研究主题: {topic}")
+    # 即使当天没有新论文，也同步网页上的主题和关键词配置。
+    update_manifest()
     print("正在寻找最新推荐...")
     # candidates = get_paper_recommendations()
     candidates = get_paper_recommendations_via_keywords()

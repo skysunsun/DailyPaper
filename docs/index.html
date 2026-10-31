@@ -3,636 +3,1199 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>📚 每日论文追踪</title>
+    <meta name="description" content="按研究主题相关度排序的每日论文追踪与归档">
+    <title>DailyPaper · 研究文献雷达</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
     <style>
         :root {
-            --primary: #2563eb;
-            --primary-light: #dbeafe;
-            --bg: #f8fafc;
-            --sidebar-bg: #ffffff;
-            --content-bg: #ffffff;
-            --border: #e2e8f0;
-            --text: #1e293b;
-            --text-muted: #64748b;
-            --hover: #f1f5f9;
+            --page: #f4f6f8;
+            --surface: #ffffff;
+            --surface-subtle: #f8fafb;
+            --ink: #172033;
+            --ink-soft: #3e4a60;
+            --muted: #748094;
+            --line: #e3e8ee;
+            --line-strong: #d5dde6;
+            --accent: #176b5b;
+            --accent-hover: #105447;
+            --accent-soft: #e9f4f0;
+            --blue-soft: #edf3fa;
+            --blue: #37658e;
+            --shadow: 0 8px 28px rgba(30, 45, 65, 0.055);
+            --sidebar-width: 284px;
         }
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { box-sizing: border-box; }
+
+        html { scroll-behavior: smooth; }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            line-height: 1.6;
+            margin: 0;
+            background: var(--page);
+            color: var(--ink);
+            font-family: Inter, "SF Pro Text", "PingFang SC", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            line-height: 1.65;
+            -webkit-font-smoothing: antialiased;
         }
 
-        .layout {
-            display: flex;
-            min-height: 100vh;
-        }
+        button, input { font: inherit; }
+        button { color: inherit; }
+        a { color: var(--accent); }
 
-        /* 侧边栏 */
         .sidebar {
-            width: 280px;
-            background: var(--sidebar-bg);
-            border-right: 1px solid var(--border);
             position: fixed;
-            top: 0;
-            left: 0;
-            bottom: 0;
-            overflow-y: auto;
-            padding: 20px 0;
-            z-index: 100;
+            inset: 0 auto 0 0;
+            z-index: 40;
+            display: flex;
+            width: var(--sidebar-width);
+            flex-direction: column;
+            overflow: hidden;
+            background: #fafbfc;
+            border-right: 1px solid var(--line);
         }
 
-        .sidebar-header {
-            padding: 0 20px 20px;
-            border-bottom: 1px solid var(--border);
-            margin-bottom: 16px;
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 26px 24px 22px;
         }
 
-        .sidebar-header h1 {
+        .brand-mark {
+            display: grid;
+            width: 40px;
+            height: 40px;
+            flex: 0 0 40px;
+            place-items: center;
+            border-radius: 11px;
+            background: var(--ink);
+            color: #fff;
+            font-size: 13px;
+            font-weight: 750;
+            letter-spacing: -0.02em;
+        }
+
+        .brand-name {
             font-size: 18px;
-            color: var(--primary);
+            font-weight: 720;
+            letter-spacing: -0.02em;
+            line-height: 1.25;
+        }
+
+        .brand-subtitle {
+            margin-top: 3px;
+            color: var(--muted);
+            font-size: 12px;
+            letter-spacing: 0.04em;
+        }
+
+        .archive-tools { padding: 0 18px 16px; }
+
+        .archive-label {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin: 0 6px 10px;
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 650;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+
+        .archive-label span:last-child {
+            letter-spacing: 0;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .search-box { position: relative; }
+
+        .search-box svg {
+            position: absolute;
+            top: 50%;
+            left: 12px;
+            width: 15px;
+            height: 15px;
+            color: var(--muted);
+            transform: translateY(-50%);
+            pointer-events: none;
+        }
+
+        .search-box input {
+            width: 100%;
+            height: 38px;
+            padding: 0 12px 0 35px;
+            border: 1px solid var(--line);
+            border-radius: 9px;
+            outline: none;
+            background: var(--surface);
+            color: var(--ink);
+            font-size: 12px;
+            transition: border-color 0.18s, box-shadow 0.18s;
+        }
+
+        .search-box input:focus {
+            border-color: rgba(23, 107, 91, 0.45);
+            box-shadow: 0 0 0 3px rgba(23, 107, 91, 0.08);
+        }
+
+        .search-box input::placeholder { color: #9aa4b2; }
+
+        .archive-nav {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0 12px 20px;
+            scrollbar-width: thin;
+            scrollbar-color: var(--line-strong) transparent;
+        }
+
+        .nav-toggle {
+            display: flex;
+            width: 100%;
+            align-items: center;
+            justify-content: space-between;
+            border: 0;
+            background: transparent;
+            cursor: pointer;
+            text-align: left;
+        }
+
+        .year-toggle {
+            padding: 9px 10px;
+            color: var(--ink-soft);
+            font-size: 13px;
+            font-weight: 680;
+        }
+
+        .month-toggle {
+            padding: 7px 10px 7px 16px;
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 560;
+        }
+
+        .nav-toggle:hover { color: var(--accent); }
+
+        .nav-toggle .label {
             display: flex;
             align-items: center;
             gap: 8px;
         }
 
-        .sidebar-header .subtitle {
-            font-size: 12px;
-            color: var(--text-muted);
-            margin-top: 4px;
+        .nav-toggle .chevron {
+            width: 14px;
+            height: 14px;
+            transition: transform 0.18s ease;
         }
 
-        .nav-section {
-            margin-bottom: 8px;
-        }
+        .nav-toggle[aria-expanded="false"] .chevron { transform: rotate(-90deg); }
 
-        .year-header {
-            padding: 10px 20px;
-            font-weight: 600;
-            font-size: 15px;
-            color: var(--text);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            user-select: none;
-        }
-
-        .year-header:hover {
-            background: var(--hover);
-        }
-
-        .year-header .arrow {
-            transition: transform 0.2s;
-            font-size: 12px;
-        }
-
-        .year-header.collapsed .arrow {
-            transform: rotate(-90deg);
-        }
-
-        .months-container {
-            overflow: hidden;
-            transition: max-height 0.3s ease;
-        }
-
-        .months-container.collapsed {
-            max-height: 0;
-        }
-
-        .month-header {
-            padding: 8px 20px 8px 36px;
-            font-size: 13px;
-            font-weight: 500;
-            color: var(--text-muted);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            user-select: none;
-        }
-
-        .month-header:hover {
-            background: var(--hover);
-            color: var(--text);
-        }
-
-        .month-header .arrow {
-            transition: transform 0.2s;
-            font-size: 10px;
-        }
-
-        .month-header.collapsed .arrow {
-            transform: rotate(-90deg);
-        }
-
-        .days-container {
-            overflow: hidden;
-            transition: max-height 0.3s ease;
-        }
-
-        .days-container.collapsed {
-            max-height: 0;
-        }
+        .month-group { margin-left: 8px; }
+        .days-container { margin: 2px 0 8px 15px; }
+        .collapsed { display: none; }
 
         .day-item {
-            padding: 8px 20px 8px 52px;
-            font-size: 13px;
-            color: var(--text-muted);
-            cursor: pointer;
             display: flex;
+            width: 100%;
             align-items: center;
             justify-content: space-between;
-            border-left: 2px solid transparent;
-            transition: all 0.15s;
+            margin: 2px 0;
+            padding: 7px 10px 7px 14px;
+            border: 0;
+            border-left: 2px solid var(--line);
+            border-radius: 0 7px 7px 0;
+            background: transparent;
+            color: var(--muted);
+            cursor: pointer;
+            font-size: 12px;
+            text-align: left;
+            transition: background 0.15s, color 0.15s, border-color 0.15s;
         }
 
         .day-item:hover {
-            background: var(--hover);
-            color: var(--text);
-            border-left-color: var(--primary);
+            background: #f0f3f5;
+            color: var(--ink);
         }
 
         .day-item.active {
-            background: var(--primary-light);
-            color: var(--primary);
-            border-left-color: var(--primary);
-            font-weight: 500;
+            border-left-color: var(--accent);
+            background: var(--accent-soft);
+            color: var(--accent);
+            font-weight: 650;
         }
 
-        .day-item .count {
-            font-size: 11px;
-            background: var(--border);
-            color: var(--text-muted);
-            padding: 1px 6px;
-            border-radius: 10px;
+        .day-count {
+            min-width: 22px;
+            padding: 0 6px;
+            border-radius: 999px;
+            background: #e9edf1;
+            color: var(--muted);
+            font-size: 10px;
+            line-height: 18px;
+            text-align: center;
+            font-variant-numeric: tabular-nums;
         }
 
-        .day-item.active .count {
-            background: var(--primary);
-            color: white;
+        .day-item.active .day-count {
+            background: rgba(23, 107, 91, 0.12);
+            color: var(--accent);
         }
 
-        /* 主内容区 */
+        .sidebar-footer {
+            padding: 15px 24px;
+            border-top: 1px solid var(--line);
+            color: var(--muted);
+            font-size: 10px;
+            letter-spacing: 0.02em;
+        }
+
         .main {
-            flex: 1;
-            margin-left: 280px;
-            padding: 40px;
-            max-width: calc(100% - 280px);
+            min-height: 100vh;
+            margin-left: var(--sidebar-width);
         }
 
-        .content-wrapper {
-            max-width: 900px;
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 30;
+            display: flex;
+            height: 62px;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 38px;
+            border-bottom: 1px solid rgba(227, 232, 238, 0.9);
+            background: rgba(244, 246, 248, 0.9);
+            backdrop-filter: blur(14px);
+        }
+
+        .topbar-left, .topbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .current-date {
+            color: var(--ink-soft);
+            font-size: 12px;
+            font-weight: 560;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .icon-button, .text-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: var(--surface);
+            color: var(--ink-soft);
+            cursor: pointer;
+            text-decoration: none;
+            transition: border-color 0.15s, color 0.15s, background 0.15s;
+        }
+
+        .icon-button {
+            width: 36px;
+            height: 36px;
+            padding: 0;
+        }
+
+        .text-button {
+            height: 34px;
+            padding: 0 12px;
+            font-size: 11px;
+            font-weight: 580;
+        }
+
+        .icon-button:hover, .text-button:hover {
+            border-color: var(--line-strong);
+            background: var(--surface-subtle);
+            color: var(--accent);
+        }
+
+        .icon-button svg, .text-button svg { width: 15px; height: 15px; }
+        .menu-button { display: none; }
+
+        .page {
+            width: min(1120px, 100%);
             margin: 0 auto;
-            background: var(--content-bg);
-            border-radius: 8px;
-            padding: 40px 50px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            padding: 38px 42px 26px;
         }
 
-        .content-wrapper h1 {
+        .overview { margin-bottom: 28px; }
+
+        .eyebrow {
+            margin-bottom: 8px;
+            color: var(--accent);
+            font-size: 10px;
+            font-weight: 720;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+        }
+
+        .overview-heading {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 24px;
+        }
+
+        .overview h1 {
+            margin: 0;
+            color: var(--ink);
+            font-size: clamp(26px, 3vw, 34px);
+            font-weight: 730;
+            letter-spacing: -0.04em;
+            line-height: 1.25;
+        }
+
+        .overview-description {
+            max-width: 600px;
+            margin: 9px 0 0;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .latest-button {
+            flex: 0 0 auto;
+            height: 38px;
+            border-color: var(--accent);
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .latest-button:hover {
+            border-color: var(--accent-hover);
+            background: var(--accent-hover);
+            color: #fff;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+            margin: 24px 0 14px;
+        }
+
+        .stat {
+            padding: 16px 18px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: var(--surface);
+        }
+
+        .stat-label {
+            color: var(--muted);
+            font-size: 11px;
+        }
+
+        .stat-value {
+            margin-top: 3px;
+            color: var(--ink);
+            font-size: 22px;
+            font-weight: 710;
+            letter-spacing: -0.03em;
+            line-height: 1.35;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .stat-value.date { font-size: 17px; letter-spacing: -0.01em; }
+
+        .topic-panel {
+            padding: 19px 22px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: var(--surface);
+        }
+
+        .panel-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 7px;
+            color: var(--ink-soft);
+            font-size: 11px;
+            font-weight: 680;
+        }
+
+        .panel-label::before {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--accent);
+            content: "";
+        }
+
+        .topic-text {
+            margin: 0;
+            color: var(--ink-soft);
+            font-size: 13px;
+            line-height: 1.75;
+        }
+
+        .keywords-panel { margin-top: 14px; }
+
+        .keywords-heading {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 9px;
+        }
+
+        .keywords-heading .panel-label { margin: 0; }
+
+        .keyword-count {
+            color: var(--muted);
+            font-size: 10px;
+        }
+
+        .keyword-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 7px;
+        }
+
+        .keyword-chip {
+            padding: 4px 9px;
+            border: 1px solid #dfe5eb;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.65);
+            color: #5c697b;
+            font-size: 10px;
+            line-height: 1.55;
+        }
+
+        .report-shell {
+            overflow: hidden;
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            background: var(--surface);
+            box-shadow: var(--shadow);
+        }
+
+        .report-toolbar {
+            display: flex;
+            min-height: 58px;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 13px 24px;
+            border-bottom: 1px solid var(--line);
+            background: var(--surface-subtle);
+        }
+
+        .report-toolbar-title {
+            font-size: 12px;
+            font-weight: 680;
+        }
+
+        .report-toolbar-date {
+            margin-left: 8px;
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 450;
+        }
+
+        .report-content {
+            padding: 28px 34px 36px;
+            color: var(--ink-soft);
+            font-size: 14px;
+            line-height: 1.85;
+            overflow-wrap: anywhere;
+        }
+
+        .report-content h1 {
+            margin: 0 0 20px;
+            color: var(--ink);
             font-size: 24px;
-            margin-bottom: 16px;
-            color: var(--text);
-            border-bottom: 2px solid var(--border);
-            padding-bottom: 12px;
+            letter-spacing: -0.025em;
+            line-height: 1.4;
         }
 
-        .content-wrapper h2 {
-            font-size: 20px;
-            margin: 32px 0 16px;
-            color: var(--text);
-            padding: 10px 16px;
-            border-radius: 8px;
-            border-left: 4px solid var(--primary);
-            background: var(--primary-light);
-        }
-
-        .content-wrapper h3 {
-            font-size: 16px;
-            margin: 22px 0 8px;
-            color: var(--text);
+        .report-content h2 {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 32px 0 18px;
+            padding: 0 0 11px;
+            border-bottom: 1px solid var(--line);
+            color: var(--ink);
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: -0.015em;
             line-height: 1.5;
         }
 
-        .content-wrapper p {
-            margin: 10px 0;
-            color: var(--text);
+        .report-content h2::after {
+            height: 2px;
+            flex: 1;
+            align-self: flex-end;
+            margin-bottom: -12px;
+            background: transparent;
+            content: "";
         }
 
-        .content-wrapper a {
-            color: var(--primary);
+        .report-content h2.section-deep { color: var(--accent); }
+        .report-content h2.section-quick { color: var(--blue); }
+
+        .report-content h3 {
+            margin: 0 0 12px;
+            color: var(--ink);
+            font-size: 17px;
+            font-weight: 680;
+            line-height: 1.55;
+        }
+
+        .report-content h3 a, .report-content .quick-title a {
+            color: var(--ink);
+            text-decoration: none;
+            background-image: linear-gradient(var(--line-strong), var(--line-strong));
+            background-position: 0 100%;
+            background-repeat: no-repeat;
+            background-size: 100% 1px;
+            transition: color 0.15s, background-size 0.15s;
+        }
+
+        .report-content h3 a:hover, .report-content .quick-title a:hover {
+            color: var(--accent);
+            background-size: 0 1px;
+        }
+
+        .report-content p { margin: 9px 0; }
+        .report-content strong { color: var(--ink); }
+        .report-content em { color: var(--muted); }
+
+        .report-content a { overflow-wrap: anywhere; }
+
+        .report-content > blockquote:first-of-type {
+            margin: 0 0 24px;
+            padding: 11px 15px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: var(--surface-subtle);
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .report-content blockquote {
+            margin: 13px 0;
+            padding: 13px 16px;
+            border: 0;
+            border-left: 3px solid #cbd7e2;
+            border-radius: 0 8px 8px 0;
+            background: #f6f8fa;
+            color: #667386;
+            font-size: 12px;
+            line-height: 1.8;
+        }
+
+        .report-content blockquote p { margin: 0; }
+
+        .paper-card {
+            margin: 0 0 18px;
+            padding: 22px 23px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: var(--surface);
+            transition: border-color 0.18s, box-shadow 0.18s;
+        }
+
+        .paper-card:hover {
+            border-color: #d2dce4;
+            box-shadow: 0 5px 18px rgba(30, 45, 65, 0.04);
+        }
+
+        .paper-card > p:first-of-type { margin-top: 0; }
+
+        .paper-card .legacy-index {
+            margin: 0 0 7px;
+            padding: 0;
+            border: 0;
+            color: var(--accent);
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+        }
+
+        .paper-card .legacy-title {
+            margin: 0 0 10px;
+            color: var(--ink);
+            font-size: 17px;
+            font-weight: 680;
+            line-height: 1.55;
+        }
+
+        .paper-card .legacy-title a {
+            color: var(--ink);
             text-decoration: none;
         }
 
-        .content-wrapper a:hover {
-            text-decoration: underline;
+        .paper-card .legacy-title a:hover { color: var(--accent); }
+
+        .paper-card .tldr {
+            margin: 14px 0;
+            padding: 11px 14px;
+            border-radius: 8px;
+            background: var(--blue-soft);
+            color: #465c74;
+            font-size: 12px;
         }
 
-        .content-wrapper blockquote {
-            border-left: 4px solid var(--primary);
-            background: var(--primary-light);
-            padding: 12px 16px;
-            margin: 12px 0;
-            border-radius: 0 6px 6px 0;
-            color: var(--text);
-        }
-
-        /* 行内 code 主要用于「相关度 XX」徽章，做成小药丸样式 */
-        .content-wrapper code {
-            background: var(--primary);
-            color: #fff;
-            padding: 1px 8px;
-            border-radius: 999px;
-            font-size: 0.78em;
-            font-weight: 600;
+        .relevance-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 1px 7px;
+            border-radius: 5px;
+            background: var(--accent-soft);
+            color: var(--accent);
+            font-family: inherit;
+            font-size: 10px;
+            font-weight: 680;
+            line-height: 1.7;
             vertical-align: middle;
             white-space: nowrap;
         }
 
-        /* 速读论文的期刊/日期小字 */
-        .content-wrapper sub {
-            display: inline-block;
-            margin-top: 2px;
-            font-size: 12px;
-            color: var(--text-muted);
+        .relevance-badge.medium { background: #f3f0e5; color: #806d2f; }
+        .relevance-badge.low { background: #eef0f3; color: #6d7784; }
+
+        .abstract-toggle {
+            margin: 12px 0 16px;
+            border-radius: 8px;
+            background: #f7f9fa;
         }
 
-        .content-wrapper pre {
-            background: #1e293b;
-            color: #e2e8f0;
-            padding: 16px;
-            border-radius: 6px;
+        .abstract-toggle summary {
+            padding: 9px 14px;
+            color: var(--muted);
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 580;
+            user-select: none;
+        }
+
+        .abstract-toggle[open] summary { padding-bottom: 0; }
+        .abstract-toggle blockquote { margin: 0; background: transparent; }
+
+        .quick-title {
+            margin: 22px 0 5px !important;
+            color: var(--ink);
+            font-size: 14px;
+            line-height: 1.65;
+        }
+
+        .quick-title + p { margin-top: 4px; color: var(--ink-soft); }
+
+        .report-content sub {
+            color: var(--muted);
+            font-size: 10px;
+            line-height: 1.6;
+        }
+
+        .report-content hr {
+            height: 1px;
+            margin: 26px 0;
+            border: 0;
+            background: var(--line);
+        }
+
+        .report-content ul, .report-content ol { padding-left: 22px; }
+
+        .report-content pre {
             overflow-x: auto;
-            margin: 12px 0;
+            padding: 15px;
+            border-radius: 9px;
+            background: #1d2735;
+            color: #e9eef4;
+            font-size: 12px;
         }
 
-        .content-wrapper pre code {
-            background: transparent;
+        .report-content pre code {
             padding: 0;
+            background: transparent;
+            color: inherit;
         }
 
-        .content-wrapper hr {
-            border: none;
-            border-top: 1px solid var(--border);
-            margin: 24px 0;
-        }
-
-        .content-wrapper ul, .content-wrapper ol {
-            margin: 10px 0;
-            padding-left: 24px;
-        }
-
-        .content-wrapper strong {
-            color: var(--text);
-        }
-
-        /* 空状态 */
-        .empty-state {
+        .empty-state, .loading {
+            padding: 60px 20px;
+            color: var(--muted);
             text-align: center;
-            padding: 80px 20px;
-            color: var(--text-muted);
-        }
-
-        .empty-state .icon {
-            font-size: 64px;
-            margin-bottom: 16px;
         }
 
         .empty-state h2 {
-            font-size: 20px;
-            margin-bottom: 8px;
-            color: var(--text);
+            margin: 0 0 8px;
+            color: var(--ink);
+            font-size: 17px;
         }
 
-        /* 加载状态 */
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: var(--text-muted);
-        }
+        .empty-state p { margin: 5px 0; font-size: 12px; }
 
-        .loading .spinner {
-            display: inline-block;
-            width: 32px;
-            height: 32px;
-            border: 3px solid var(--border);
-            border-top-color: var(--primary);
+        .spinner {
+            width: 25px;
+            height: 25px;
+            margin: 0 auto 12px;
+            border: 2px solid var(--line);
+            border-top-color: var(--accent);
             border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-            margin-bottom: 12px;
+            animation: spin 0.75s linear infinite;
         }
 
-        @keyframes spin {
-            to { transform: rotate(360deg); }
+        .nav-empty { padding: 25px 12px; color: var(--muted); font-size: 12px; text-align: center; }
+
+        .page-footer {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+            padding: 20px 2px 0;
+            color: var(--muted);
+            font-size: 10px;
         }
 
-        /* 顶部栏（移动端） */
-        .mobile-header {
-            display: none;
-            background: var(--sidebar-bg);
-            border-bottom: 1px solid var(--border);
-            padding: 12px 16px;
-            position: sticky;
-            top: 0;
-            z-index: 99;
-        }
+        .page-footer a { color: inherit; text-decoration: none; }
+        .page-footer a:hover { color: var(--accent); }
 
-        .mobile-header button {
-            background: var(--primary);
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-        }
-
-        /* 遮罩层 */
         .overlay {
-            display: none;
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.4);
-            z-index: 99;
+            inset: 0;
+            z-index: 35;
+            display: none;
+            background: rgba(23, 32, 51, 0.35);
+            backdrop-filter: blur(2px);
         }
 
-        .overlay.show {
-            display: block;
+        .overlay.show { display: block; }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        @media (max-width: 960px) {
+            .sidebar { transform: translateX(-100%); transition: transform 0.22s ease; }
+            .sidebar.open { transform: translateX(0); }
+            .main { margin-left: 0; }
+            .menu-button { display: inline-flex; }
+            .topbar { padding: 0 22px; }
+            .page { padding: 30px 24px 24px; }
         }
 
-        /* 响应式 */
-        @media (max-width: 768px) {
-            .sidebar {
-                transform: translateX(-100%);
-                transition: transform 0.3s;
-                width: 260px;
-            }
-
-            .sidebar.open {
-                transform: translateX(0);
-            }
-
-            .main {
-                margin-left: 0;
-                max-width: 100%;
-                padding: 20px;
-            }
-
-            .mobile-header {
-                display: block;
-            }
-
-            .content-wrapper {
-                padding: 24px 20px;
-            }
+        @media (max-width: 640px) {
+            .topbar { height: 56px; padding: 0 15px; }
+            .topbar-actions .github-label { display: none; }
+            .page { padding: 24px 15px 20px; }
+            .overview-heading { align-items: flex-start; }
+            .overview-description { font-size: 12px; }
+            .latest-button { display: none; }
+            .stats { gap: 8px; margin-top: 20px; }
+            .stat { padding: 12px; }
+            .stat-label { font-size: 10px; }
+            .stat-value { font-size: 18px; }
+            .stat-value.date { font-size: 13px; }
+            .topic-panel { padding: 16px; }
+            .keyword-list { max-height: 92px; overflow-y: auto; }
+            .report-toolbar { padding: 12px 16px; }
+            .report-toolbar-date { display: block; margin: 1px 0 0; }
+            .report-content { padding: 22px 17px 28px; font-size: 13px; }
+            .paper-card { padding: 18px 16px; }
+            .report-content h3 { font-size: 16px; }
+            .page-footer { display: block; line-height: 1.9; }
         }
 
-        .footer {
-            text-align: center;
-            padding: 24px;
-            color: var(--text-muted);
-            font-size: 13px;
-        }
-
-        .footer a {
-            color: var(--primary);
-            text-decoration: none;
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
         }
     </style>
 </head>
 <body>
-    <div class="mobile-header">
-        <button onclick="toggleSidebar()">☰ 菜单</button>
-    </div>
+    <div class="overlay" id="overlay"></div>
 
-    <div class="overlay" id="overlay" onclick="toggleSidebar()"></div>
-
-    <div class="layout">
-        <!-- 侧边栏导航 -->
-        <aside class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <h1>📚 每日论文追踪</h1>
-                <div class="subtitle">AI 按研究主题相关度排序 · 精读 / 速读双模块</div>
+    <aside class="sidebar" id="sidebar" aria-label="报告归档">
+        <div class="brand">
+            <div class="brand-mark" aria-hidden="true">DP</div>
+            <div>
+                <div class="brand-name">DailyPaper</div>
+                <div class="brand-subtitle">研究文献雷达</div>
             </div>
-            <nav id="nav-content">
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <div>加载中...</div>
+        </div>
+
+        <div class="archive-tools">
+            <div class="archive-label"><span>报告归档</span><span id="archive-count">0</span></div>
+            <label class="search-box">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+                <input id="date-search" type="search" placeholder="筛选日期，如 2026-07" aria-label="筛选报告日期">
+            </label>
+        </div>
+
+        <nav class="archive-nav" id="nav-content">
+            <div class="loading"><div class="spinner"></div><div>加载归档...</div></div>
+        </nav>
+
+        <div class="sidebar-footer">Semantic Scholar · LLM Ranking</div>
+    </aside>
+
+    <main class="main">
+        <header class="topbar">
+            <div class="topbar-left">
+                <button class="icon-button menu-button" id="menu-button" aria-label="打开报告归档">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>
+                </button>
+                <span class="current-date" id="current-date">研究论文日报</span>
+            </div>
+            <div class="topbar-actions">
+                <button class="text-button" id="latest-top-button">最新报告</button>
+                <a class="text-button" href="https://github.com/skysunsun/DailyPaper" target="_blank" rel="noopener noreferrer" aria-label="打开 GitHub 仓库">
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.4c.58.1.79-.25.79-.55v-2.15c-3.22.7-3.9-1.36-3.9-1.36-.52-1.34-1.28-1.7-1.28-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.78 2.7 1.27 3.36.97.1-.75.4-1.27.73-1.56-2.57-.29-5.27-1.29-5.27-5.72 0-1.26.45-2.3 1.19-3.11-.12-.29-.52-1.47.11-3.06 0 0 .97-.31 3.17 1.19a10.9 10.9 0 0 1 5.78 0c2.2-1.5 3.17-1.19 3.17-1.19.63 1.59.23 2.77.11 3.06.74.81 1.19 1.85 1.19 3.11 0 4.44-2.71 5.42-5.29 5.71.42.36.79 1.06.79 2.14v3.17c0 .31.21.66.8.55A11.5 11.5 0 0 0 12 .7Z"></path></svg>
+                    <span class="github-label">GitHub</span>
+                </a>
+            </div>
+        </header>
+
+        <div class="page">
+            <section class="overview" aria-labelledby="page-title">
+                <div class="eyebrow">Research Digest</div>
+                <div class="overview-heading">
+                    <div>
+                        <h1 id="page-title">每日论文追踪</h1>
+                        <p class="overview-description">按研究相关度重新排序，把需要深读的工作与可以快速扫读的进展分开呈现。</p>
+                    </div>
+                    <button class="text-button latest-button" id="latest-button">阅读最新日报</button>
                 </div>
-            </nav>
-        </aside>
 
-        <!-- 主内容区 -->
-        <main class="main">
-            <div class="content-wrapper" id="content">
-                <div class="empty-state">
-                    <div class="icon">📖</div>
-                    <h2>选择日期查看论文日报</h2>
-                    <p>从左侧导航选择一个日期，查看当天的论文追踪报告</p>
+                <div class="stats" aria-label="追踪统计">
+                    <div class="stat"><div class="stat-label">归档报告</div><div class="stat-value" id="report-total">—</div></div>
+                    <div class="stat"><div class="stat-label">累计收录论文</div><div class="stat-value" id="paper-total">—</div></div>
+                    <div class="stat"><div class="stat-label">最近更新</div><div class="stat-value date" id="latest-date">—</div></div>
                 </div>
-            </div>
-            <div class="footer">
-                <p>Powered by <a href="https://github.com" target="_blank">GitHub Actions</a> & <a href="https://pages.github.com/" target="_blank">GitHub Pages</a></p>
-            </div>
-        </main>
-    </div>
+
+                <div class="topic-panel">
+                    <div class="panel-label">当前研究主题</div>
+                    <p class="topic-text" id="research-topic">正在读取研究配置...</p>
+                </div>
+
+                <div class="keywords-panel">
+                    <div class="keywords-heading">
+                        <div class="panel-label">检索关键词</div>
+                        <span class="keyword-count" id="keyword-count"></span>
+                    </div>
+                    <div class="keyword-list" id="keyword-list"></div>
+                </div>
+            </section>
+
+            <section class="report-shell" aria-label="论文日报正文">
+                <div class="report-toolbar">
+                    <div>
+                        <span class="report-toolbar-title">报告正文</span>
+                        <span class="report-toolbar-date" id="report-date">等待选择</span>
+                    </div>
+                    <a class="text-button" id="raw-report-link" href="#" target="_blank" rel="noopener noreferrer" hidden>查看 Markdown</a>
+                </div>
+                <article class="report-content" id="content">
+                    <div class="empty-state">
+                        <h2>选择一份日报开始阅读</h2>
+                        <p>从左侧归档选择日期，或直接打开最新报告。</p>
+                    </div>
+                </article>
+            </section>
+
+            <footer class="page-footer">
+                <span>DailyPaper · Automated research digest</span>
+                <span>主题与关键词由每次追踪任务自动同步</span>
+            </footer>
+        </div>
+    </main>
 
     <script>
-        let manifestData = null;
+        let manifestData = { dates: [] };
+        let activeDate = null;
+        let reportRequestId = 0;
 
-        // 获取 manifest.json
+        const elements = {
+            nav: document.getElementById("nav-content"),
+            content: document.getElementById("content"),
+            sidebar: document.getElementById("sidebar"),
+            overlay: document.getElementById("overlay"),
+            search: document.getElementById("date-search")
+        };
+
+        function escapeHtml(value) {
+            return String(value ?? "").replace(/[&<>'"]/g, char => ({
+                "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
+            })[char]);
+        }
+
+        function normalizedDates() {
+            return (manifestData.dates || []).map(entry => ({
+                date: typeof entry === "string" ? entry : entry.date,
+                count: typeof entry === "object" ? Number(entry.count) || 0 : 0
+            })).filter(entry => /^\d{4}-\d{2}-\d{2}$/.test(entry.date || ""))
+              .sort((a, b) => b.date.localeCompare(a.date));
+        }
+
         async function loadManifest() {
             try {
-                const response = await fetch('manifest.json?t=' + Date.now());
-                if (!response.ok) {
-                    throw new Error('无法加载 manifest.json');
-                }
+                const response = await fetch(`manifest.json?t=${Date.now()}`);
+                if (!response.ok) throw new Error(`无法加载 manifest.json (${response.status})`);
                 manifestData = await response.json();
+                renderSiteMetadata();
                 renderSidebar();
+
+                const dates = normalizedDates();
+                const requestedDate = new URLSearchParams(location.hash.slice(1)).get("date");
+                const initialDate = dates.some(item => item.date === requestedDate) ? requestedDate : dates[0]?.date;
+                if (initialDate) loadReport(initialDate);
+                else showEmptyReport();
             } catch (error) {
-                console.error('加载 manifest 失败:', error);
-                document.getElementById('nav-content').innerHTML = `
-                    <div class="empty-state" style="padding: 40px 20px;">
-                        <div class="icon">📭</div>
-                        <p>暂无报告数据</p>
-                        <p style="font-size: 12px; margin-top: 8px;">请等待 GitHub Actions 生成日报</p>
-                    </div>
-                `;
+                console.error("加载 manifest 失败:", error);
+                elements.nav.innerHTML = '<div class="nav-empty">暂无归档数据<br>请等待追踪任务生成日报</div>';
+                renderSiteMetadata();
+                showReportError("无法读取报告归档", error.message);
             }
         }
 
-        // 按年月分组
-        function groupByYearMonth(dates) {
-            const grouped = {};
-            dates.forEach(entry => {
-                const date = typeof entry === 'string' ? entry : entry.date;
-                const count = typeof entry === 'object' ? entry.count : null;
-                const [year, month] = date.split('-');
-                if (!grouped[year]) grouped[year] = {};
-                if (!grouped[year][month]) grouped[year][month] = [];
-                grouped[year][month].push({ date, count });
-            });
-            return grouped;
+        function renderSiteMetadata() {
+            const dates = normalizedDates();
+            const totalPapers = dates.reduce((sum, item) => sum + item.count, 0);
+            const keywords = Array.isArray(manifestData.keywords) ? manifestData.keywords.filter(Boolean) : [];
+            const topic = manifestData.researchTopic || "尚未同步研究主题。运行一次追踪任务后，将自动读取 config/research_topic.txt。";
+
+            document.getElementById("archive-count").textContent = `${dates.length} 份`;
+            document.getElementById("report-total").textContent = dates.length.toLocaleString("zh-CN");
+            document.getElementById("paper-total").textContent = totalPapers.toLocaleString("zh-CN");
+            document.getElementById("latest-date").textContent = dates[0]?.date || "暂无";
+            document.getElementById("research-topic").textContent = topic;
+            document.getElementById("keyword-count").textContent = keywords.length ? `${keywords.length} 个` : "未同步";
+            document.getElementById("keyword-list").innerHTML = keywords.length
+                ? keywords.map(keyword => `<span class="keyword-chip">${escapeHtml(keyword)}</span>`).join("")
+                : '<span class="keyword-chip">运行追踪任务后自动同步 config/keywords.txt</span>';
         }
 
-        // 渲染侧边栏
-        function renderSidebar() {
-            const navContent = document.getElementById('nav-content');
-            const dates = manifestData.dates || [];
+        function groupByYearMonth(dates) {
+            return dates.reduce((groups, entry) => {
+                const [year, month] = entry.date.split("-");
+                groups[year] ||= {};
+                groups[year][month] ||= [];
+                groups[year][month].push(entry);
+                return groups;
+            }, {});
+        }
 
-            if (dates.length === 0) {
-                navContent.innerHTML = `
-                    <div class="empty-state" style="padding: 40px 20px;">
-                        <div class="icon">📭</div>
-                        <p>暂无报告</p>
-                    </div>
-                `;
+        function renderSidebar(filter = "") {
+            const query = filter.trim().toLowerCase();
+            const dates = normalizedDates().filter(item => item.date.includes(query));
+            if (!dates.length) {
+                elements.nav.innerHTML = `<div class="nav-empty">${query ? "没有匹配的日期" : "暂无报告"}</div>`;
                 return;
             }
 
             const grouped = groupByYearMonth(dates);
-            const years = Object.keys(grouped).sort((a, b) => b - a);
+            const years = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
+            const latestDate = normalizedDates()[0]?.date;
+            let html = "";
 
-            let html = '';
-            years.forEach((year, yearIdx) => {
-                const months = Object.keys(grouped[year]).sort((a, b) => b - a);
-                const isLatestYear = yearIdx === 0;
+            years.forEach(year => {
+                const months = Object.keys(grouped[year]).sort((a, b) => b.localeCompare(a));
+                const expandYear = Boolean(query) || latestDate?.startsWith(year) || activeDate?.startsWith(year);
+                html += `<section class="year-group">
+                    <button class="nav-toggle year-toggle" data-target="months-${year}" aria-expanded="${expandYear}">
+                        <span class="label">${year} 年</span>
+                        <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m7 10 5 5 5-5"></path></svg>
+                    </button>
+                    <div class="months-container ${expandYear ? "" : "collapsed"}" id="months-${year}">`;
 
-                html += `
-                    <div class="nav-section">
-                        <div class="year-header ${isLatestYear ? '' : 'collapsed'}" onclick="toggleSection(this, 'months-${year}')">
-                            <span>📅 ${year}年</span>
-                            <span class="arrow">▼</span>
-                        </div>
-                        <div class="months-container ${isLatestYear ? '' : 'collapsed'}" id="months-${year}">
-                `;
-
-                months.forEach((month, monthIdx) => {
-                    const days = grouped[year][month].sort((a, b) => b.date.localeCompare(a.date));
-                    const isLatestMonth = isLatestYear && monthIdx === 0;
-
-                    html += `
-                        <div class="month-header ${isLatestMonth ? '' : 'collapsed'}" onclick="toggleSection(this, 'days-${year}-${month}')">
-                            <span>${parseInt(month)}月 (${days.length})</span>
-                            <span class="arrow">▼</span>
-                        </div>
-                        <div class="days-container ${isLatestMonth ? '' : 'collapsed'}" id="days-${year}-${month}">
-                    `;
+                months.forEach(month => {
+                    const days = grouped[year][month];
+                    const monthKey = `${year}-${month}`;
+                    const expandMonth = Boolean(query) || latestDate?.startsWith(monthKey) || activeDate?.startsWith(monthKey);
+                    html += `<div class="month-group">
+                        <button class="nav-toggle month-toggle" data-target="days-${year}-${month}" aria-expanded="${expandMonth}">
+                            <span class="label">${Number(month)} 月 · ${days.length} 份</span>
+                            <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m7 10 5 5 5-5"></path></svg>
+                        </button>
+                        <div class="days-container ${expandMonth ? "" : "collapsed"}" id="days-${year}-${month}">`;
 
                     days.forEach(day => {
-                        const dayNum = day.date.split('-')[2];
-                        html += `
-                            <div class="day-item" onclick="loadReport('${day.date}')" data-date="${day.date}">
-                                <span>${parseInt(dayNum)}日</span>
-                                ${day.count ? `<span class="count">${day.count}</span>` : ''}
-                            </div>
-                        `;
+                        html += `<button class="day-item ${day.date === activeDate ? "active" : ""}" data-date="${day.date}">
+                            <span>${Number(day.date.split("-")[2])} 日</span>
+                            <span class="day-count" title="${day.count} 篇论文">${day.count}</span>
+                        </button>`;
                     });
-
-                    html += `</div>`;
+                    html += "</div></div>";
                 });
-
-                html += `</div></div>`;
+                html += "</div></section>";
             });
-
-            navContent.innerHTML = html;
-
-            // 自动加载最新报告
-            if (dates.length > 0) {
-                loadReport(dates[0].date || dates[0]);
-            }
+            elements.nav.innerHTML = html;
         }
 
-        // 折叠/展开
-        function toggleSection(header, containerId) {
-            const container = document.getElementById(containerId);
-            header.classList.toggle('collapsed');
-            container.classList.toggle('collapsed');
+        function toggleSection(button) {
+            const container = document.getElementById(button.dataset.target);
+            if (!container) return;
+            const willExpand = container.classList.contains("collapsed");
+            container.classList.toggle("collapsed", !willExpand);
+            button.setAttribute("aria-expanded", String(willExpand));
         }
 
-        // 加载指定日期的报告
         async function loadReport(date) {
-            const content = document.getElementById('content');
-            content.innerHTML = `
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <div>正在加载 ${date} 的报告...</div>
-                </div>
-            `;
-
-            // 更新激活状态
-            document.querySelectorAll('.day-item').forEach(item => {
-                item.classList.remove('active');
-                if (item.dataset.date === date) {
-                    item.classList.add('active');
-                }
-            });
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+            const requestId = ++reportRequestId;
+            activeDate = date;
+            updateActiveNavigation(date);
+            document.getElementById("current-date").textContent = date;
+            document.getElementById("report-date").textContent = date;
+            document.getElementById("raw-report-link").hidden = true;
+            elements.content.innerHTML = '<div class="loading"><div class="spinner"></div><div>正在加载日报...</div></div>';
 
             try {
-                const [year, month, day] = date.split('-');
-                const url = `archive/${year}/${month}/${date}.md?t=${Date.now()}`;
-                const response = await fetch(url);
-
-                if (!response.ok) {
-                    throw new Error(`无法加载报告 (${response.status})`);
-                }
+                const [year, month] = date.split("-");
+                const reportPath = `archive/${year}/${month}/${date}.md`;
+                const response = await fetch(`${reportPath}?t=${Date.now()}`);
+                if (!response.ok) throw new Error(`无法加载报告 (${response.status})`);
+                if (requestId !== reportRequestId) return;
 
                 const markdown = await response.text();
-                const html = marked.parse(markdown);
-                content.innerHTML = html;
+                if (typeof marked === "undefined") throw new Error("Markdown 渲染组件加载失败，请检查网络后刷新");
+                const rendered = marked.parse(markdown, { breaks: true, gfm: true });
+                elements.content.innerHTML = typeof DOMPurify === "undefined" ? rendered : DOMPurify.sanitize(rendered);
+                enhanceReport();
 
-                // 滚动到顶部
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-
-                // 移动端关闭侧边栏
-                if (window.innerWidth <= 768) {
-                    toggleSidebar(false);
-                }
+                const rawLink = document.getElementById("raw-report-link");
+                rawLink.href = reportPath;
+                rawLink.hidden = false;
+                history.replaceState(null, "", `#date=${date}`);
+                document.title = `${date} · DailyPaper`;
+                window.scrollTo({ top: 0, behavior: "smooth" });
+                toggleSidebar(false);
             } catch (error) {
-                console.error('加载报告失败:', error);
-                content.innerHTML = `
-                    <div class="empty-state">
-                        <div class="icon">⚠️</div>
-                        <h2>加载失败</h2>
-                        <p>${error.message}</p>
-                    </div>
-                `;
+                if (requestId !== reportRequestId) return;
+                console.error("加载报告失败:", error);
+                showReportError("这份日报暂时无法打开", error.message);
             }
         }
 
-        // 移动端侧边栏切换
-        function toggleSidebar(forceState) {
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('overlay');
-            const isOpen = sidebar.classList.contains('open');
-
-            const shouldOpen = forceState !== undefined ? forceState : !isOpen;
-
-            sidebar.classList.toggle('open', shouldOpen);
-            overlay.classList.toggle('show', shouldOpen);
-        }
-
-        // 配置 marked
-        if (typeof marked !== 'undefined') {
-            marked.setOptions({
-                breaks: true,
-                gfm: true
+        function updateActiveNavigation(date) {
+            document.querySelectorAll(".day-item").forEach(item => {
+                const isActive = item.dataset.date === date;
+                item.classList.toggle("active", isActive);
+                if (isActive) {
+                    item.setAttribute("aria-current", "page");
+                    const days = item.closest(".days-container");
+                    const months = item.closest(".months-container");
+                    days?.classList.remove("collapsed");
+                    months?.classList.remove("collapsed");
+                    if (days?.id) document.querySelector(`[data-target="${days.id}"]`)?.setAttribute("aria-expanded", "true");
+                    if (months?.id) document.querySelector(`[data-target="${months.id}"]`)?.setAttribute("aria-expanded", "true");
+                } else {
+                    item.removeAttribute("aria-current");
+                }
             });
         }
 
-        // 初始化
+        function enhanceReport() {
+            const article = elements.content;
+            article.querySelector(":scope > h1")?.remove();
+            article.querySelectorAll("a").forEach(link => {
+                link.target = "_blank";
+                link.rel = "noopener noreferrer";
+            });
+
+            article.querySelectorAll("h2").forEach(heading => {
+                const text = heading.textContent;
+                if (text.includes("精读")) heading.classList.add("section-deep");
+                if (text.includes("速读")) heading.classList.add("section-quick");
+            });
+
+            article.querySelectorAll("code").forEach(code => {
+                if (!code.textContent.includes("相关度")) return;
+                const score = Number(code.textContent.match(/\d+/)?.[0] || 0);
+                code.classList.add("relevance-badge");
+                if (score < 70) code.classList.add("medium");
+                if (score < 40) code.classList.add("low");
+            });
+
+            article.querySelectorAll("p").forEach(paragraph => {
+                if (/^TLDR\s*[:：]/i.test(paragraph.textContent.trim())) paragraph.classList.add("tldr");
+                if (paragraph.querySelector(":scope > strong > a")) paragraph.classList.add("quick-title");
+            });
+
+            article.querySelectorAll("h3").forEach(heading => {
+                const card = document.createElement("section");
+                card.className = "paper-card";
+                heading.parentNode.insertBefore(card, heading);
+                card.appendChild(heading);
+                let node = card.nextSibling;
+                while (node && !(node.nodeType === 1 && ["H2", "H3", "HR"].includes(node.tagName))) {
+                    const next = node.nextSibling;
+                    card.appendChild(node);
+                    node = next;
+                }
+                if (node?.nodeType === 1 && node.tagName === "HR") node.remove();
+            });
+
+            article.querySelectorAll("h2").forEach(heading => {
+                if (!/^\d+$/.test(heading.textContent.trim())) return;
+                const card = document.createElement("section");
+                card.className = "paper-card legacy-card";
+                heading.parentNode.insertBefore(card, heading);
+                card.appendChild(heading);
+                heading.classList.add("legacy-index");
+                let node = card.nextSibling;
+                while (node && !(node.nodeType === 1 && ["H2", "H3", "HR"].includes(node.tagName))) {
+                    const next = node.nextSibling;
+                    card.appendChild(node);
+                    node = next;
+                }
+                card.querySelector(":scope > p")?.classList.add("legacy-title");
+                if (node?.nodeType === 1 && node.tagName === "HR") node.remove();
+            });
+
+            article.querySelectorAll(".paper-card blockquote").forEach(quote => {
+                const details = document.createElement("details");
+                details.className = "abstract-toggle";
+                const summary = document.createElement("summary");
+                summary.textContent = "展开英文摘要";
+                quote.parentNode.insertBefore(details, quote);
+                details.appendChild(summary);
+                details.appendChild(quote);
+                details.addEventListener("toggle", () => {
+                    summary.textContent = details.open ? "收起英文摘要" : "展开英文摘要";
+                });
+            });
+        }
+
+        function showEmptyReport() {
+            document.getElementById("report-date").textContent = "暂无报告";
+            elements.content.innerHTML = '<div class="empty-state"><h2>还没有论文日报</h2><p>运行一次 Daily Paper Tracker 后，报告会自动出现在这里。</p></div>';
+        }
+
+        function showReportError(title, message) {
+            elements.content.innerHTML = `<div class="empty-state"><h2>${escapeHtml(title)}</h2><p>${escapeHtml(message)}</p></div>`;
+        }
+
+        function toggleSidebar(forceState) {
+            const shouldOpen = forceState ?? !elements.sidebar.classList.contains("open");
+            elements.sidebar.classList.toggle("open", shouldOpen);
+            elements.overlay.classList.toggle("show", shouldOpen);
+            document.body.style.overflow = shouldOpen ? "hidden" : "";
+        }
+
+        function openLatestReport() {
+            const latest = normalizedDates()[0]?.date;
+            if (latest) loadReport(latest);
+        }
+
+        elements.nav.addEventListener("click", event => {
+            const toggle = event.target.closest(".nav-toggle");
+            const day = event.target.closest(".day-item");
+            if (toggle) toggleSection(toggle);
+            if (day) loadReport(day.dataset.date);
+        });
+        elements.search.addEventListener("input", event => renderSidebar(event.target.value));
+        document.getElementById("menu-button").addEventListener("click", () => toggleSidebar());
+        elements.overlay.addEventListener("click", () => toggleSidebar(false));
+        document.getElementById("latest-button").addEventListener("click", openLatestReport);
+        document.getElementById("latest-top-button").addEventListener("click", openLatestReport);
+        document.addEventListener("keydown", event => {
+            if (event.key === "Escape") toggleSidebar(false);
+        });
+
         loadManifest();
     </script>
 </body>
